@@ -1,0 +1,12 @@
+{
+  "name": "ping-pong-link",
+  "version": "1.0.0",
+  "description": "Real-time turn-based ping pong messaging game",
+  "scripts": {
+    "dev": "vercel dev",
+    "build": "echo ok"
+  },
+  "dependencies": {
+    "ably": "^2.6.0"
+  }
+}
