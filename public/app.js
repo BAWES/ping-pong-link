@@ -1,41 +1,46 @@
-// ── CONFIG ───────────────────────────────────────────────────────────────
-const EMOJI_CHOICES = ['🏓', '🔥', '🦄', '🤖', '🐯', '🎧', '🌊', '⚡', '🍉', '🛰️', '🐼', '🎯', '🎸', '🌙', '🦊', '🎯'];
+// ── CONFIG ────────────────────────────────────────────────────────────────
+const EMOJI_CHOICES = ['🏓','🔥','🦄','🤖','🐯','🎧','🌊','⚡','🍉','🛰️','🐼','🎯','🎸','🌙','🦊','🎨'];
 const MAX_FEED = 60;
+// Session key is scoped to the room so two tabs in different rooms don't clash
+const sessKey = (room) => `pp:${room}`;
 
-// ── IDENTITY PERSISTENCE (sessionStorage = per-tab, works in iframes) ────
-// We store {name, emoji, seat, room} so a refresh in the same tab restores
-// the player's identity and seat without overriding the opponent.
-function saveSession(patch) {
+// ── SESSION HELPERS ───────────────────────────────────────────────────────
+// Stored: { name, emoji, seat, clientId }
+// Keyed per-room so each room/tab has its own record.
+function saveSession(room, data) {
+  try { sessionStorage.setItem(sessKey(room), JSON.stringify(data)); } catch {}
+}
+function loadSession(room) {
+  try { return JSON.parse(sessionStorage.getItem(sessKey(room)) || 'null'); } catch { return null; }
+}
+function clearSession(room) {
+  try { sessionStorage.removeItem(sessKey(room)); } catch {}
+}
+// Generate a stable per-tab client ID, stored in sessionStorage (not per-room)
+function getOrCreateClientId() {
   try {
-    const cur = JSON.parse(sessionStorage.getItem('pp_session') || '{}');
-    sessionStorage.setItem('pp_session', JSON.stringify({ ...cur, ...patch }));
-  } catch {}
-}
-function loadSession() {
-  try { return JSON.parse(sessionStorage.getItem('pp_session') || '{}'); } catch { return {}; }
-}
-function clearSession() {
-  try { sessionStorage.removeItem('pp_session'); } catch {}
+    let id = sessionStorage.getItem('pp:clientId');
+    if (!id) { id = Math.random().toString(36).slice(2, 10); sessionStorage.setItem('pp:clientId', id); }
+    return id;
+  } catch { return Math.random().toString(36).slice(2, 10); }
 }
 
 // ── STATE ─────────────────────────────────────────────────────────────────
 const state = {
   room: '',
   me: { name: '', emoji: '🏓' },
-  mySeat: null,            // 0 or 1 — set once, never re-assigned
-  myClientId: null,        // stable per-tab id stored in session
+  mySeat: null,        // 0 = ping/host, 1 = pong/guest — assigned ONCE, never changed
+  myClientId: getOrCreateClientId(),
   rs: { seats: [null, null], next: 'ping', activeSeat: 0, lastMove: null, feed: [] },
   realtime: null,
   channel: null,
   connected: false,
-  notificationsEnabled: false,
-  reconnectAttempts: 0,
 };
 
 // ── UTILS ─────────────────────────────────────────────────────────────────
 const $ = (id) => document.getElementById(id);
 const esc = (s = '') =>
-  s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
+  s.replace(/[&<>"']/g, (c) => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' })[c]);
 const linkify = (t = '') =>
   esc(t).replace(/(https?:\/\/[^\s<]+)/g, '<a href="$1" target="_blank" rel="noopener noreferrer">$1</a>');
 const shortCode = () => Math.random().toString(36).slice(2, 8).toUpperCase();
@@ -58,12 +63,10 @@ const showFieldError = (el, msg) => {
 // ── SCREENS ───────────────────────────────────────────────────────────────
 function showScreen(id) {
   document.querySelectorAll('.screen').forEach((s) => {
-    s.classList.remove('active');
-    s.classList.add('hidden');
+    s.classList.remove('active'); s.classList.add('hidden');
   });
   const s = $(id);
-  s.classList.remove('hidden');
-  s.classList.add('active');
+  if (s) { s.classList.remove('hidden'); s.classList.add('active'); }
 }
 
 // ── THEME ─────────────────────────────────────────────────────────────────
@@ -75,8 +78,15 @@ function setTheme(t) {
   if ($('themeToggle')) $('themeToggle').textContent = icon;
   if ($('themeToggleGame')) $('themeToggleGame').textContent = icon;
 }
-function toggleTheme() {
-  setTheme(theme === 'dark' ? 'light' : 'dark');
+function toggleTheme() { setTheme(theme === 'dark' ? 'light' : 'dark'); }
+
+// ── QR BUILD ──────────────────────────────────────────────────────────────
+function buildQR(containerId, url) {
+  const el = $(containerId);
+  if (!el) return;
+  el.innerHTML = '';
+  new QRCode(el, { text: url, width: 200, height: 200,
+    colorDark: '#000', colorLight: '#fff', correctLevel: QRCode.CorrectLevel.M });
 }
 
 // ── ONBOARDING ────────────────────────────────────────────────────────────
@@ -90,10 +100,7 @@ function buildEmojiGrid(gridId) {
     b.className = 'emoji-btn' + (e === state.me.emoji ? ' active' : '');
     b.textContent = e;
     b.setAttribute('aria-label', `Emoji ${e}`);
-    b.onclick = () => {
-      state.me.emoji = e;
-      buildEmojiGrid(gridId);
-    };
+    b.onclick = () => { state.me.emoji = e; buildEmojiGrid(gridId); };
     grid.appendChild(b);
   });
 }
@@ -105,47 +112,25 @@ function showStep(id) {
   });
 }
 
-function buildQR(containerId, url) {
-  const el = $(containerId);
-  if (!el) return;
-  el.innerHTML = '';
-  new QRCode(el, {
-    text: url,
-    width: 200,
-    height: 200,
-    colorDark: '#000',
-    colorLight: '#fff',
-    correctLevel: QRCode.CorrectLevel.M,
-  });
-}
-
 function setupOnboarding() {
-  // ── Restore session: if this tab already played in this room, skip onboarding
-  const session = loadSession();
   const hashRoom = readHash();
 
-  if (
-    session.name &&
-    session.emoji &&
-    session.room &&
-    session.seat != null &&
-    session.clientId &&
-    hashRoom === session.room
-  ) {
-    // Same tab refreshed mid-game — restore without re-onboarding
-    state.me.name   = session.name;
-    state.me.emoji  = session.emoji;
-    state.room      = session.room;
-    state.mySeat    = session.seat;
-    state.myClientId = session.clientId;
-    enterGameRestored();
-    return;
+  // ── RESTORE: same tab refreshed while in a game ────────────────────────
+  // Check if this tab has a saved session for the current room hash.
+  // If yes, skip onboarding entirely and jump straight back into the game.
+  if (hashRoom) {
+    const saved = loadSession(hashRoom);
+    if (saved && saved.clientId === state.myClientId && saved.seat != null) {
+      state.me.name    = saved.name;
+      state.me.emoji   = saved.emoji;
+      state.room       = hashRoom;
+      state.mySeat     = saved.seat;
+      enterGame(/* restored= */ true);
+      return;
+    }
   }
 
-  // Fresh session — pre-fill name/emoji if available
-  if (session.name) $('ob-name').value = session.name;
-  if (session.emoji) state.me.emoji = session.emoji;
-
+  // ── FRESH ONBOARDING ──────────────────────────────────────────────────
   buildEmojiGrid('ob-emoji-row');
   setTheme(theme);
 
@@ -173,11 +158,7 @@ function setupOnboarding() {
     showStep('step-room');
   };
 
-  $('guest-join-btn').onclick = async () => {
-    await enterGame();
-    autoClaimSeat();
-  };
-
+  // HOST: creates room → gets seat 0 (ping) deterministically
   $('host-create-btn').onclick = async () => {
     const code = shortCode();
     state.room = code;
@@ -189,10 +170,19 @@ function setupOnboarding() {
   };
 
   $('qr-copy-btn').onclick = () => copyText($('qr-link-input').value, $('qr-copy-btn'));
+
+  // Host clicks "I'm ready" → seat 0
   $('qr-continue-btn').onclick = async () => {
-    await enterGame();
-    autoClaimSeat();
+    state.mySeat = 0; // HOST always ping side
+    persistAndEnter();
   };
+
+  // GUEST: arrives via link → seat 1 (pong) deterministically
+  $('guest-join-btn').onclick = async () => {
+    state.mySeat = 1; // GUEST always pong side
+    persistAndEnter();
+  };
+
   $('qr-show-qr-btn').onclick = () => buildQR('qr-wrap', $('qr-link-input').value);
 
   $('ob-name').addEventListener('keydown', (e) => {
@@ -206,61 +196,23 @@ function setupOnboarding() {
   if ($('themeToggle')) $('themeToggle').onclick = toggleTheme;
 }
 
+// Called once seat is assigned — persist then enter game
+function persistAndEnter() {
+  saveSession(state.room, {
+    name: state.me.name,
+    emoji: state.me.emoji,
+    seat: state.mySeat,
+    clientId: state.myClientId,
+  });
+  enterGame(/* restored= */ false);
+}
+
 // ── ENTER GAME ────────────────────────────────────────────────────────────
-async function enterGame() {
+async function enterGame(restored = false) {
   showScreen('screen-game');
   $('feedRoomCode').textContent = state.room;
   renderGame();
-  await connect();
-}
-
-// Restored path: reconnect with saved seat, re-announce presence only
-async function enterGameRestored() {
-  showScreen('screen-game');
-  $('feedRoomCode').textContent = state.room;
-  renderGame();
-  await connect(/* restored= */ true);
-}
-
-// ── AUTO CLAIM SEAT ───────────────────────────────────────────────────────
-// Only called for NEW players. Checks that both conditions hold:
-//   1. This player has not already claimed a seat (mySeat === null)
-//   2. The seat index is actually empty in the room state
-async function autoClaimSeat() {
-  if (!state.channel) {
-    setTimeout(autoClaimSeat, 800);
-    return;
-  }
-  // Already seated (shouldn't happen, but guard anyway)
-  if (state.mySeat !== null) return;
-
-  const open = state.rs.seats.findIndex((s) => !s);
-  if (open === -1) {
-    // Room full — join as spectator (no seat)
-    state.rs.feed.unshift({ type: 'system', text: 'Room is full — you joined as a spectator.', time: Date.now() });
-    renderGame();
-    return;
-  }
-  state.mySeat = open;
-  state.rs.seats[open] = { name: state.me.name, emoji: state.me.emoji, seat: open };
-
-  // Persist so a refresh in this tab restores the same seat
-  saveSession({
-    name: state.me.name,
-    emoji: state.me.emoji,
-    room: state.room,
-    seat: open,
-    clientId: state.myClientId,
-  });
-
-  await state.channel.publish('seat-claim', {
-    seat: open,
-    name: state.me.name,
-    emoji: state.me.emoji,
-    clientId: state.myClientId,
-    time: Date.now(),
-  });
-  renderGame();
+  await connect(restored);
 }
 
 // ── ABLY CONNECT ──────────────────────────────────────────────────────────
@@ -272,30 +224,28 @@ async function connect(restored = false) {
     state.channel = null;
   }
 
-  // Use a stable clientId stored in session so reconnects don't look like new players
-  if (!state.myClientId) {
-    state.myClientId = `${state.me.name || 'player'}-${Math.random().toString(36).slice(2, 6)}`;
-  }
-  const clientId = state.myClientId;
+  state.realtime = new Ably.Realtime({
+    authUrl: `/api/ably-auth?clientId=${encodeURIComponent(state.myClientId)}`,
+  });
 
-  state.realtime = new Ably.Realtime({ authUrl: `/api/ably-auth?clientId=${encodeURIComponent(clientId)}` });
   state.realtime.connection.on('connected', async () => {
     state.connected = true;
     hideReconnect();
     renderGame();
-    // If restoring from a refresh, re-announce seat presence so the opponent sees us
-    if (restored && state.mySeat !== null) {
+    // Announce our seat so the opponent sees us (on both fresh join and restore)
+    if (state.mySeat !== null) {
       await state.channel.publish('seat-claim', {
-        seat: state.mySeat,
-        name: state.me.name,
-        emoji: state.me.emoji,
+        seat:     state.mySeat,
+        name:     state.me.name,
+        emoji:    state.me.emoji,
         clientId: state.myClientId,
-        time: Date.now(),
-        restored: true,   // flag so others know this is a rejoin, not a new claim
+        restored, // lets opponent show "reconnected" vs "joined"
+        time:     Date.now(),
       });
       renderGame();
     }
   });
+
   state.realtime.connection.on('disconnected', () => {
     state.connected = false;
     showReconnect('Connection lost. Reconnecting…', false);
@@ -315,6 +265,7 @@ async function connect(restored = false) {
   state.channel = state.realtime.channels.get(`pingpong:${state.room}`);
   state.channel.subscribe((msg) => {
     const d = msg.data;
+
     if (msg.name === 'move') {
       state.rs.feed.unshift(d);
       state.rs.feed = state.rs.feed.slice(0, MAX_FEED);
@@ -322,39 +273,40 @@ async function connect(restored = false) {
       state.rs.next = d.action === 'ping' ? 'pong' : 'ping';
       state.rs.activeSeat = d.seat === 0 ? 1 : 0;
       animateBall(d.seat);
-      if (state.notificationsEnabled && document.hidden && Notification.permission === 'granted')
-        new Notification(`${d.emoji} ${d.name} sent ${d.action.toUpperCase()}`, { body: d.text || 'Your turn!' });
       renderGame();
     }
+
     if (msg.name === 'seat-claim') {
-      // Only update the room state if the incoming claim is for a DIFFERENT clientId
-      // than the one already occupying that seat. This prevents the second player's
-      // seat-claim broadcast from overwriting the first player's local seat.
+      // Accept the claim only if:
+      //   a) the incoming clientId owns this seat (their own echo or a real claim), OR
+      //   b) the seat is currently empty
+      // Never allow a different clientId to overwrite an already-occupied seat.
       const existing = state.rs.seats[d.seat];
-      const isMyOwnEcho = d.clientId && d.clientId === state.myClientId;
-      if (!existing || existing.clientId !== d.clientId) {
-        state.rs.seats[d.seat] = { name: d.name, emoji: d.emoji, seat: d.seat, clientId: d.clientId };
-      }
-      if (!isMyOwnEcho) {
-        const verb = d.restored ? 'reconnected to' : 'joined';
-        state.rs.feed.unshift({
-          type: 'system',
-          text: `${d.emoji} ${d.name} ${verb} ${d.seat === 0 ? 'Ping side' : 'Pong side'}`,
-          time: Date.now(),
-        });
+      const isOccupiedByOther = existing && existing.clientId !== d.clientId;
+      if (!isOccupiedByOther) {
+        state.rs.seats[d.seat] = {
+          name: d.name, emoji: d.emoji, seat: d.seat, clientId: d.clientId,
+        };
+        // Show feed message only for the opponent's claim (not our own echo)
+        if (d.clientId !== state.myClientId) {
+          const verb = d.restored ? 'reconnected to' : 'joined';
+          state.rs.feed.unshift({
+            type: 'system',
+            text: `${d.emoji} ${d.name} ${verb} ${d.seat === 0 ? 'Ping side' : 'Pong side'}`,
+            time: Date.now(),
+          });
+        }
       }
       renderGame();
     }
+
     if (msg.name === 'reset') {
+      clearSession(state.room);
       state.rs = {
-        seats: [null, null],
-        next: 'ping',
-        activeSeat: 0,
-        lastMove: null,
+        seats: [null, null], next: 'ping', activeSeat: 0, lastMove: null,
         feed: [{ type: 'system', text: 'Room was reset', time: Date.now() }],
       };
       state.mySeat = null;
-      clearSession();
       renderGame();
     }
   });
@@ -367,8 +319,7 @@ function animateBall(seat) {
   ball.classList.remove('ping-side', 'pong-side', 'hit');
   void ball.offsetWidth;
   ball.classList.add(seat === 0 ? 'ping-side' : 'pong-side', 'hit');
-  const paddleId = seat === 0 ? 'paddleLeft' : 'paddleRight';
-  const paddle = $(paddleId);
+  const paddle = $(seat === 0 ? 'paddleLeft' : 'paddleRight');
   if (paddle) paddle.style.top = 28 + Math.random() * 44 + '%';
 }
 
@@ -388,15 +339,14 @@ function renderPlayers() {
   state.rs.seats.forEach((seat, i) => {
     if (i === 1) {
       const vs = document.createElement('span');
-      vs.className = 'vs-badge';
-      vs.textContent = 'VS';
+      vs.className = 'vs-badge'; vs.textContent = 'VS';
       view.appendChild(vs);
     }
     const pill = document.createElement('div');
     pill.className = 'player-pill' + (state.rs.activeSeat === i ? ' active' : '');
     pill.innerHTML = seat
       ? `<span class="pip"></span><span>${seat.emoji} ${esc(seat.name)}</span><span class="seat-label">${labels[i]}</span>`
-      : `<span class="pip"></span><span style="color:var(--color-text-faint)">Open seat</span><span class="seat-label">${labels[i]}</span>`;
+      : `<span class="pip"></span><span style="color:var(--faint)">Open seat</span><span class="seat-label">${labels[i]}</span>`;
     view.appendChild(pill);
   });
 }
@@ -408,25 +358,23 @@ function renderFeed() {
     feed.innerHTML = '<div class="feed-empty">No hits yet.<br>First move is <strong>ping</strong>.</div>';
     return;
   }
-  feed.innerHTML = state.rs.feed
-    .map((item) => {
-      if (item.type === 'system')
-        return `<article class="event system"><div class="event-head"><span class="event-who" style="color:var(--color-text-faint)">Room</span><span class="event-time">${timeText(item.time)}</span></div><div class="event-body">${esc(item.text)}</div></article>`;
-      return `<article class="event ${item.action}"><div class="event-head"><span class="event-who">${item.emoji} ${esc(item.name)}</span><span class="event-action ${item.action}">${item.action.toUpperCase()}</span><span class="event-time">${timeText(item.time)}</span></div>${item.text ? `<div class="event-body">${linkify(item.text)}</div>` : ''}</article>`;
-    })
-    .join('');
+  feed.innerHTML = state.rs.feed.map((item) => {
+    if (item.type === 'system')
+      return `<article class="event system"><div class="event-head"><span class="event-who" style="color:var(--faint)">Room</span><span class="event-time">${timeText(item.time)}</span></div><div class="event-body">${esc(item.text)}</div></article>`;
+    return `<article class="event ${item.action}"><div class="event-head"><span class="event-who">${item.emoji} ${esc(item.name)}</span><span class="event-action ${item.action}">${item.action.toUpperCase()}</span><span class="event-time">${timeText(item.time)}</span></div>${item.text ? `<div class="event-body">${linkify(item.text)}</div>` : ''}</article>`;
+  }).join('');
 }
 
 function renderComposer() {
   const sendBtn = $('sendBtn');
   const hint = $('composerHint');
   if (!sendBtn || !hint) return;
-  const myTurn = state.mySeat !== null && state.rs.activeSeat === state.mySeat && state.channel;
+  const myTurn = state.mySeat !== null && state.rs.activeSeat === state.mySeat && state.channel && state.connected;
   sendBtn.disabled = !myTurn;
-  if (!state.room) hint.innerHTML = 'Create or join a room first.';
+  if (!state.room)           hint.innerHTML = 'Create or join a room first.';
   else if (state.mySeat === null) hint.innerHTML = 'Waiting to claim a seat…';
-  else if (!myTurn) hint.innerHTML = `Waiting for opponent's <strong>${state.rs.next}</strong>…`;
-  else hint.innerHTML = `Your turn: send <strong>${state.rs.next}</strong>`;
+  else if (!myTurn)          hint.innerHTML = `Waiting for opponent's <strong>${state.rs.next}</strong>…`;
+  else                       hint.innerHTML = `Your turn — send <strong>${state.rs.next.toUpperCase()}</strong>`;
   const turnText = $('turnText');
   if (turnText) {
     const cs = state.rs.seats[state.rs.activeSeat];
@@ -444,50 +392,27 @@ function renderSyncBadge() {
 // ── SEND TURN ─────────────────────────────────────────────────────────────
 async function sendTurn() {
   showFieldError($('composerError'), '');
-  if (!state.channel) {
-    showFieldError($('composerError'), 'Join a room first.');
-    return;
-  }
-  if (state.mySeat === null) {
-    showFieldError($('composerError'), 'Seat not claimed yet.');
-    return;
-  }
-  if (state.rs.activeSeat !== state.mySeat) {
-    showFieldError($('composerError'), 'Not your turn.');
-    return;
-  }
+  if (!state.channel)          { showFieldError($('composerError'), 'Not connected.'); return; }
+  if (state.mySeat === null)   { showFieldError($('composerError'), 'Seat not set.'); return; }
+  if (state.rs.activeSeat !== state.mySeat) { showFieldError($('composerError'), 'Not your turn.'); return; }
   const seat = state.rs.seats[state.mySeat];
-  if (!seat) {
-    showFieldError($('composerError'), 'Seat missing — refresh.');
-    return;
-  }
+  if (!seat) { showFieldError($('composerError'), 'Seat missing — refresh.'); return; }
   const text = ($('messageInput').value || '').trim();
-  if (text.length > 1000) {
-    showFieldError($('composerError'), 'Message too long (max 1000).');
-    return;
-  }
-  const payload = {
-    roomCode: state.room,
-    action: state.rs.next,
-    seat: state.mySeat,
-    name: seat.name,
-    emoji: seat.emoji,
-    text,
-    expectedNext: state.rs.next,
-  };
-  const sendBtn = $('sendBtn');
-  sendBtn.disabled = true;
+  if (text.length > 1000) { showFieldError($('composerError'), 'Message too long (max 1000).'); return; }
+
+  $('sendBtn').disabled = true;
   try {
     const res = await fetch('/api/publish', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
+      body: JSON.stringify({
+        roomCode: state.room, action: state.rs.next,
+        seat: state.mySeat, name: seat.name, emoji: seat.emoji,
+        text, expectedNext: state.rs.next,
+      }),
     });
     const data = await res.json();
-    if (!res.ok) {
-      showFieldError($('composerError'), data.error || 'Failed to send.');
-      return;
-    }
+    if (!res.ok) { showFieldError($('composerError'), data.error || 'Failed to send.'); return; }
     $('messageInput').value = '';
     updateCharCount();
   } finally {
@@ -495,7 +420,7 @@ async function sendTurn() {
   }
 }
 
-// ── SHARE / QR MODAL ──────────────────────────────────────────────────────
+// ── QR MODAL ──────────────────────────────────────────────────────────────
 function openQRModal() {
   const url = location.href;
   $('qr-modal-link').value = url;
@@ -503,26 +428,21 @@ function openQRModal() {
   $('qr-modal').classList.remove('hidden');
 }
 
-// ── COPY HELPER ───────────────────────────────────────────────────────────
+// ── COPY ──────────────────────────────────────────────────────────────────
 async function copyText(text, btn) {
   try {
     await navigator.clipboard.writeText(text);
     const orig = btn.textContent;
     btn.textContent = 'Copied ✓';
     setTimeout(() => (btn.textContent = orig), 1500);
-  } catch {
-    prompt('Copy this link:', text);
-  }
+  } catch { prompt('Copy this link:', text); }
 }
 
 // ── CHAR COUNT ────────────────────────────────────────────────────────────
 function updateCharCount() {
   const len = ($('messageInput') || { value: '' }).value.length;
   const cc = $('charCount');
-  if (cc) {
-    cc.textContent = `${len} / 1000`;
-    cc.classList.toggle('over', len > 1000);
-  }
+  if (cc) { cc.textContent = `${len} / 1000`; cc.classList.toggle('over', len > 1000); }
 }
 
 // ── BANNERS ───────────────────────────────────────────────────────────────
@@ -533,17 +453,13 @@ function showError(msg) {
   clearTimeout(errorTimer);
   errorTimer = setTimeout(clearError, 6000);
 }
-function clearError() {
-  $('errorBanner').classList.add('hidden');
-}
-function showReconnect(msg, btn) {
+function clearError() { $('errorBanner').classList.add('hidden'); }
+function showReconnect(msg, showBtn) {
   $('reconnectMsg').textContent = msg;
   $('reconnectBanner').classList.remove('hidden');
-  $('reconnectBtn').classList.toggle('hidden', !btn);
+  $('reconnectBtn').style.display = showBtn ? '' : 'none';
 }
-function hideReconnect() {
-  $('reconnectBanner').classList.add('hidden');
-}
+function hideReconnect() { $('reconnectBanner').classList.add('hidden'); }
 
 // ── BOOT ──────────────────────────────────────────────────────────────────
 function boot() {
@@ -551,29 +467,22 @@ function boot() {
   setupOnboarding();
 
   if ($('themeToggleGame')) $('themeToggleGame').onclick = toggleTheme;
-  if ($('shareBtn')) $('shareBtn').onclick = openQRModal;
-  if ($('qrModalClose')) $('qrModalClose').onclick = () => $('qr-modal').classList.add('hidden');
-  if ($('qr-modal'))
-    $('qr-modal').addEventListener('click', (e) => {
-      if (e.target === $('qr-modal')) $('qr-modal').classList.add('hidden');
-    });
-  if ($('qr-modal-copy')) $('qr-modal-copy').onclick = () => copyText($('qr-modal-link').value, $('qr-modal-copy'));
-  if ($('sendBtn')) $('sendBtn').onclick = sendTurn;
-  if ($('resetRoomBtn'))
-    $('resetRoomBtn').onclick = async () => {
-      if (!state.channel) return;
-      if (!confirm('Reset room for both players?')) return;
-      await state.channel.publish('reset', { time: Date.now() });
-    };
-  if ($('errorDismiss')) $('errorDismiss').onclick = clearError;
-  if ($('reconnectBtn')) $('reconnectBtn').onclick = () => connect();
+  if ($('shareBtn'))        $('shareBtn').onclick = openQRModal;
+  if ($('qrModalClose'))    $('qrModalClose').onclick = () => $('qr-modal').classList.add('hidden');
+  if ($('qr-modal'))        $('qr-modal').addEventListener('click', (e) => { if (e.target === $('qr-modal')) $('qr-modal').classList.add('hidden'); });
+  if ($('qr-modal-copy'))   $('qr-modal-copy').onclick = () => copyText($('qr-modal-link').value, $('qr-modal-copy'));
+  if ($('sendBtn'))         $('sendBtn').onclick = sendTurn;
+  if ($('resetRoomBtn'))    $('resetRoomBtn').onclick = async () => {
+    if (!state.channel) return;
+    if (!confirm('Reset room for both players?')) return;
+    await state.channel.publish('reset', { time: Date.now() });
+  };
+  if ($('errorDismiss'))    $('errorDismiss').onclick = clearError;
+  if ($('reconnectBtn'))    $('reconnectBtn').onclick = () => connect(true);
   if ($('messageInput')) {
     $('messageInput').addEventListener('input', updateCharCount);
     $('messageInput').addEventListener('keydown', (e) => {
-      if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
-        e.preventDefault();
-        sendTurn();
-      }
+      if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); sendTurn(); }
     });
   }
 
