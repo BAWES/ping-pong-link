@@ -1,8 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { mockReq, mockRes } from './helpers.js';
 
-// Mock the ably module
-vi.mock('ably', () => {
+const { MockRest, createTokenRequest } = vi.hoisted(() => {
   const createTokenRequest = vi.fn().mockResolvedValue({
     keyName: 'test-key',
     clientId: 'test-client',
@@ -11,21 +10,16 @@ vi.mock('ably', () => {
     mac: 'def456',
     capability: '{}',
   });
-
-  // Use class syntax so `new` works
   const MockRest = vi.fn(function (key) {
     this.key = key;
     this.auth = { createTokenRequest };
   });
-
-  return {
-    default: { Rest: MockRest },
-    __mocks: { MockRest, createTokenRequest },
-  };
+  return { MockRest, createTokenRequest };
 });
 
-import * as AblyModule from 'ably';
-const { MockRest, createTokenRequest } = AblyModule.__mocks;
+vi.mock('ably', () => ({
+  default: { Rest: MockRest },
+}));
 
 describe('api/ably-auth.js', () => {
   let handler;
@@ -50,7 +44,7 @@ describe('api/ably-auth.js', () => {
 
   it('returns 500 when ABLY_API_KEY is not configured', async () => {
     vi.stubEnv('ABLY_API_KEY', '');
-    const mod = await import('../ably-auth.js?update=' + Date.now());
+    const mod = await import('../ably-auth.js?update=1');
     const h = mod.default;
     const req = mockReq({ query: {} });
     const res = mockRes();

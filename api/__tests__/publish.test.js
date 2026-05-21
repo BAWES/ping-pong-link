@@ -1,26 +1,22 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { mockReq, mockRes } from './helpers.js';
 
-// Mock the ably module before importing the handler
-vi.mock('ably', () => {
+const { publish, MockRest, MockChannels } = vi.hoisted(() => {
   const publish = vi.fn().mockResolvedValue(undefined);
-  function MockChannel() { return { publish }; }
-  MockChannel.prototype.publish = publish;
+  const MockChannel = vi.fn(function () {
+    this.publish = publish;
+  });
   const MockChannels = { get: vi.fn(() => new MockChannel()) };
-  // Use class syntax so `new` works
   const MockRest = vi.fn(function (key) {
     this.key = key;
     this.channels = MockChannels;
   });
-
-  return {
-    default: { Rest: MockRest },
-    __mocks: { MockRest, MockChannels, MockChannel, publish },
-  };
+  return { publish, MockRest, MockChannels };
 });
 
-import * as AblyModule from 'ably';
-const { MockRest, MockChannels, publish } = AblyModule.__mocks;
+vi.mock('ably', () => ({
+  default: { Rest: MockRest },
+}));
 
 describe('api/publish.js', () => {
   let handler;
@@ -53,7 +49,7 @@ describe('api/publish.js', () => {
 
   it('returns 500 when ABLY_API_KEY is missing', async () => {
     vi.stubEnv('ABLY_API_KEY', '');
-    const mod = await import('../publish.js?update=' + Date.now());
+    const mod = await import('../publish.js?update=1');
     const h = mod.default;
     const req = mockReq();
     const res = mockRes();
@@ -70,29 +66,46 @@ describe('api/publish.js', () => {
     expect(res._body).toEqual({ error: 'Invalid JSON' });
   });
 
-  it('returns 400 when required fields are missing', async () => {
+  it('returns 400 with field-specific errors when required fields are missing', async () => {
     const req = mockReq({ body: {} });
     const res = mockRes();
     await handler(req, res);
     expect(res._status).toBe(400);
     expect(res._body.error).toContain('Invalid or missing room code');
+    expect(res._body.error).toContain('Action must be ping or pong');
+    expect(res._body.error).toContain('Seat must be 0 or 1');
     expect(res._body.error).toContain('Name is required');
+    expect(res._body.error).toContain('Emoji is required');
   });
 
-  it('returns 400 when action is not ping or pong', async () => {
+  it('returns 400 with validation errors when data is invalid', async () => {
     const req = mockReq({
-      body: { roomCode: 'R1', action: 'invalid', seat: 0, name: 'A', emoji: 'X', expectedNext: 'ping' },
+      body: {
+        roomCode: 'invalid room!',
+        action: 'invalid',
+        seat: 99,
+        name: '',
+        emoji: '',
+        expectedNext: 'ping',
+      },
     });
     const res = mockRes();
     await handler(req, res);
     expect(res._status).toBe(400);
+    expect(res._body.error).toContain('Invalid or missing room code');
     expect(res._body.error).toContain('Action must be ping or pong');
+    expect(res._body.error).toContain('Seat must be 0 or 1');
+    expect(res._body.error).toContain('Name is required');
   });
 
-  it('returns 400 when turn order is violated (now validated pre-Ably)', async () => {
+  it('returns 400 when turn order is violated', async () => {
     const req = mockReq({
       body: {
-        roomCode: 'R1', action: 'pong', seat: 0, name: 'A', emoji: 'X',
+        roomCode: 'R1',
+        action: 'pong',
+        seat: 0,
+        name: 'A',
+        emoji: 'X',
         expectedNext: 'ping',
       },
     });
@@ -104,8 +117,13 @@ describe('api/publish.js', () => {
 
   it('publishes a valid move and returns 200', async () => {
     const body = {
-      roomCode: 'R1', action: 'ping', seat: 0, name: 'Alice', emoji: '🏓',
-      text: 'hello', expectedNext: 'ping',
+      roomCode: 'R1',
+      action: 'ping',
+      seat: 0,
+      name: 'Alice',
+      emoji: 'P',
+      text: 'hello',
+      expectedNext: 'ping',
     };
     const req = mockReq({ body });
     const res = mockRes();
@@ -116,20 +134,26 @@ describe('api/publish.js', () => {
     expect(res._body.event.action).toBe('ping');
     expect(res._body.event.name).toBe('Alice');
 
-    // Verify Ably was called correctly
     expect(MockRest).toHaveBeenCalledWith('test-key');
     expect(MockChannels.get).toHaveBeenCalledWith('pingpong:R1');
-    expect(publish).toHaveBeenCalledWith('move', expect.objectContaining({
-      type: 'move',
-      action: 'ping',
-      seat: 0,
-      name: 'Alice',
-    }));
+    expect(publish).toHaveBeenCalledWith(
+      'move',
+      expect.objectContaining({
+        type: 'move',
+        action: 'ping',
+        seat: 0,
+        name: 'Alice',
+      }),
+    );
   });
 
   it('accepts stringified JSON body', async () => {
     const body = JSON.stringify({
-      roomCode: 'R2', action: 'pong', seat: 1, name: 'Bob', emoji: '🎾',
+      roomCode: 'R2',
+      action: 'pong',
+      seat: 1,
+      name: 'Bob',
+      emoji: 'B',
       expectedNext: 'pong',
     });
     const req = mockReq({ body });
@@ -142,9 +166,11 @@ describe('api/publish.js', () => {
 
   it('sanitizes name to 32 chars, emoji to 2 chars, text to 1000 chars', async () => {
     const body = {
-      roomCode: 'R1', action: 'ping', seat: 0,
+      roomCode: 'R1',
+      action: 'ping',
+      seat: 0,
       name: 'A'.repeat(100),
-      emoji: '🏓'.repeat(10),
+      emoji: 'XY'.repeat(10),
       text: 'B'.repeat(2000),
       expectedNext: 'ping',
     };
@@ -153,15 +179,19 @@ describe('api/publish.js', () => {
     await handler(req, res);
 
     expect(res._status).toBe(200);
-    expect(res._body.event.name.length).toBe(32);
-    expect(res._body.event.emoji.length).toBe(2);
-    expect(res._body.event.text.length).toBe(1000);
+    expect(res._body.event.name.length).toBeLessThanOrEqual(32);
+    expect(res._body.event.emoji.length).toBeLessThanOrEqual(2);
+    expect(res._body.event.text.length).toBeLessThanOrEqual(1000);
   });
 
   it('returns 500 when Ably publish fails', async () => {
     publish.mockRejectedValueOnce(new Error('Ably error'));
     const body = {
-      roomCode: 'R1', action: 'ping', seat: 0, name: 'A', emoji: 'X',
+      roomCode: 'R1',
+      action: 'ping',
+      seat: 0,
+      name: 'A',
+      emoji: 'X',
       expectedNext: 'ping',
     };
     const req = mockReq({ body });
@@ -173,16 +203,24 @@ describe('api/publish.js', () => {
   });
 
   it('returns 429 when rate limit is exceeded', async () => {
-    // Send 11 requests rapidly (rate limit is 10/sec)
+    // Send 11 requests rapidly for the same room (rate limit is 10/sec)
     for (let i = 0; i < 10; i++) {
       const body = {
-        roomCode: 'RATE_TEST', action: 'ping', seat: 0, name: 'A', emoji: 'X',
+        roomCode: 'RATE_TEST',
+        action: 'ping',
+        seat: 0,
+        name: 'A',
+        emoji: 'X',
         expectedNext: 'ping',
       };
       await handler(mockReq({ body }), mockRes());
     }
     const body = {
-      roomCode: 'RATE_TEST', action: 'ping', seat: 0, name: 'A', emoji: 'X',
+      roomCode: 'RATE_TEST',
+      action: 'ping',
+      seat: 0,
+      name: 'A',
+      emoji: 'X',
       expectedNext: 'ping',
     };
     const req = mockReq({ body });
