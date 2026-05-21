@@ -4,9 +4,17 @@
   "description": "Real-time turn-based ping pong messaging game",
   "scripts": {
     "dev": "vercel dev",
-    "build": "echo ok"
+    "build": "echo ok",
+    "lint": "prettier --check . && eslint .",
+    "format": "prettier --write .",
+    "test": "vitest run"
   },
   "dependencies": {
     "ably": "^2.6.0"
+  },
+  "devDependencies": {
+    "eslint": "^9.0.0",
+    "prettier": "^3.4.0",
+    "vitest": "^4.1.7"
   }
 }
