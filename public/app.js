@@ -448,7 +448,10 @@ function boot() {
   if ($('themeToggleGame')) $('themeToggleGame').onclick = toggleTheme;
   if ($('shareBtn')) $('shareBtn').onclick = openQRModal;
   if ($('qrModalClose')) $('qrModalClose').onclick = () => $('qr-modal').classList.add('hidden');
-  if ($('qr-modal')) $('qr-modal').addEventListener('click', (e) => { if (e.target === $('qr-modal')) $('qr-modal').classList.add('hidden'); });
+  if ($('qr-modal'))
+    $('qr-modal').addEventListener('click', (e) => {
+      if (e.target === $('qr-modal')) $('qr-modal').classList.add('hidden');
+    });
   if ($('qr-modal-copy')) $('qr-modal-copy').onclick = () => copyText($('qr-modal-link').value, $('qr-modal-copy'));
   if ($('sendBtn')) $('sendBtn').onclick = sendTurn;
   if ($('resetRoomBtn'))
