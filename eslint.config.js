@@ -12,6 +12,7 @@ export default [
         ...globals.browser,
         ...globals.node,
         Ably: 'readonly',
+        QRCode: 'readonly',
       },
     },
     rules: {
