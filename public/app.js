@@ -1,12 +1,9 @@
 // ── CONFIG ────────────────────────────────────────────────────────────────
 const EMOJI_CHOICES = ['🏓','🔥','🦄','🤖','🐯','🎧','🌊','⚡','🍉','🛰️','🐼','🎯','🎸','🌙','🦊','🎨'];
 const MAX_FEED = 60;
-// Session key is scoped to the room so two tabs in different rooms don't clash
 const sessKey = (room) => `pp:${room}`;
 
 // ── SESSION HELPERS ───────────────────────────────────────────────────────
-// Stored: { name, emoji, seat, clientId }
-// Keyed per-room so each room/tab has its own record.
 function saveSession(room, data) {
   try { sessionStorage.setItem(sessKey(room), JSON.stringify(data)); } catch {}
 }
@@ -16,7 +13,6 @@ function loadSession(room) {
 function clearSession(room) {
   try { sessionStorage.removeItem(sessKey(room)); } catch {}
 }
-// Generate a stable per-tab client ID, stored in sessionStorage (not per-room)
 function getOrCreateClientId() {
   try {
     let id = sessionStorage.getItem('pp:clientId');
@@ -29,12 +25,16 @@ function getOrCreateClientId() {
 const state = {
   room: '',
   me: { name: '', emoji: '🏓' },
-  mySeat: null,        // 0 = ping/host, 1 = pong/guest — assigned ONCE, never changed
+  mySeat: null,        // 0 = ping/host, 1 = pong/guest — set once, never changed
   myClientId: getOrCreateClientId(),
   rs: { seats: [null, null], next: 'ping', activeSeat: 0, lastMove: null, feed: [] },
   realtime: null,
   channel: null,
   connected: false,
+  // Lobby-only: Ably connection open while host is still on QR screen
+  lobbyRealtime: null,
+  lobbyChannel: null,
+  lobbyGuest: null,   // { name, emoji, clientId } if guest arrived before host clicked ready
 };
 
 // ── UTILS ─────────────────────────────────────────────────────────────────
@@ -89,6 +89,60 @@ function buildQR(containerId, url) {
     colorDark: '#000', colorLight: '#fff', correctLevel: QRCode.CorrectLevel.M });
 }
 
+// ── LOBBY (host listens on QR screen before clicking ready) ───────────────────
+function renderLobby() {
+  const hostName = $('lobby-host-name');
+  const guestRow = $('lobby-guest-row');
+  const guestName = $('lobby-guest-name');
+  const readyBtn  = $('qr-continue-btn');
+  if (!hostName || !guestRow || !guestName || !readyBtn) return;
+
+  // Host row
+  hostName.textContent = `${state.me.emoji} ${state.me.name} (you)`;
+
+  if (state.lobbyGuest) {
+    // Guest has arrived — show them and pulse the ready button
+    guestRow.classList.remove('lobby-row--empty');
+    guestRow.classList.add('lobby-row--joined');
+    guestName.textContent = `${state.lobbyGuest.emoji} ${state.lobbyGuest.name}`;
+    readyBtn.classList.add('btn-pulse');
+    readyBtn.textContent = 'Start game →';
+  } else {
+    guestRow.classList.add('lobby-row--empty');
+    guestRow.classList.remove('lobby-row--joined');
+    guestName.textContent = 'Waiting for opponent…';
+    readyBtn.classList.remove('btn-pulse');
+    readyBtn.textContent = "I'm ready →";
+  }
+}
+
+async function startLobbyListener(room) {
+  // Open a lightweight Ably connection just to listen for the guest's seat-claim
+  // while the host is still on the QR screen.
+  const clientId = state.myClientId + '-lobby';
+  state.lobbyRealtime = new Ably.Realtime({
+    authUrl: `/api/ably-auth?clientId=${encodeURIComponent(clientId)}`,
+  });
+  state.lobbyChannel = state.lobbyRealtime.channels.get(`pingpong:${room}`);
+
+  state.lobbyChannel.subscribe('seat-claim', (msg) => {
+    const d = msg.data;
+    // We only care about the guest (seat 1) and ignore our own echoes
+    if (d.seat === 1 && d.clientId !== state.myClientId && d.clientId !== clientId) {
+      state.lobbyGuest = { name: d.name, emoji: d.emoji, clientId: d.clientId };
+      renderLobby();
+    }
+  });
+}
+
+function stopLobbyListener() {
+  if (state.lobbyRealtime) {
+    try { state.lobbyRealtime.close(); } catch {}
+    state.lobbyRealtime = null;
+    state.lobbyChannel  = null;
+  }
+}
+
 // ── ONBOARDING ────────────────────────────────────────────────────────────
 function buildEmojiGrid(gridId) {
   const grid = $(gridId);
@@ -115,16 +169,14 @@ function showStep(id) {
 function setupOnboarding() {
   const hashRoom = readHash();
 
-  // ── RESTORE: same tab refreshed while in a game ────────────────────────
-  // Check if this tab has a saved session for the current room hash.
-  // If yes, skip onboarding entirely and jump straight back into the game.
+  // ── RESTORE: same tab refreshed mid-game ────────────────────────────
   if (hashRoom) {
     const saved = loadSession(hashRoom);
     if (saved && saved.clientId === state.myClientId && saved.seat != null) {
-      state.me.name    = saved.name;
-      state.me.emoji   = saved.emoji;
-      state.room       = hashRoom;
-      state.mySeat     = saved.seat;
+      state.me.name   = saved.name;
+      state.me.emoji  = saved.emoji;
+      state.room      = hashRoom;
+      state.mySeat    = saved.seat;
       enterGame(/* restored= */ true);
       return;
     }
@@ -158,7 +210,7 @@ function setupOnboarding() {
     showStep('step-room');
   };
 
-  // HOST: creates room → gets seat 0 (ping) deterministically
+  // HOST: creates room → opens lobby listener → gets seat 0 when ready
   $('host-create-btn').onclick = async () => {
     const code = shortCode();
     state.room = code;
@@ -166,19 +218,33 @@ function setupOnboarding() {
     const shareUrl = location.href;
     $('qr-link-input').value = shareUrl;
     buildQR('qr-wrap', shareUrl);
+    // Render the lobby with host info immediately
+    renderLobby();
     showStep('step-qr');
+    // Start listening for the guest in the background
+    startLobbyListener(code);
   };
 
   $('qr-copy-btn').onclick = () => copyText($('qr-link-input').value, $('qr-copy-btn'));
 
-  // Host clicks "I'm ready" → seat 0
-  $('qr-continue-btn').onclick = async () => {
+  // Host clicks ready → stop lobby listener, assign seat 0, enter game
+  $('qr-continue-btn').onclick = () => {
+    stopLobbyListener();
     state.mySeat = 0; // HOST always ping side
+    // If guest already arrived in lobby, pre-populate seat 1 so game renders immediately
+    if (state.lobbyGuest) {
+      state.rs.seats[1] = {
+        name: state.lobbyGuest.name,
+        emoji: state.lobbyGuest.emoji,
+        seat: 1,
+        clientId: state.lobbyGuest.clientId,
+      };
+    }
     persistAndEnter();
   };
 
-  // GUEST: arrives via link → seat 1 (pong) deterministically
-  $('guest-join-btn').onclick = async () => {
+  // GUEST: arrives via link → seat 1 deterministically
+  $('guest-join-btn').onclick = () => {
     state.mySeat = 1; // GUEST always pong side
     persistAndEnter();
   };
@@ -196,12 +262,12 @@ function setupOnboarding() {
   if ($('themeToggle')) $('themeToggle').onclick = toggleTheme;
 }
 
-// Called once seat is assigned — persist then enter game
+// Persist seat + identity, then enter the game screen
 function persistAndEnter() {
   saveSession(state.room, {
-    name: state.me.name,
-    emoji: state.me.emoji,
-    seat: state.mySeat,
+    name:     state.me.name,
+    emoji:    state.me.emoji,
+    seat:     state.mySeat,
     clientId: state.myClientId,
   });
   enterGame(/* restored= */ false);
@@ -215,13 +281,13 @@ async function enterGame(restored = false) {
   await connect(restored);
 }
 
-// ── ABLY CONNECT ──────────────────────────────────────────────────────────
+// ── ABLY CONNECT (game screen) ───────────────────────────────────────────
 async function connect(restored = false) {
   if (!state.room) return;
   if (state.realtime) {
     try { state.realtime.close(); } catch {}
     state.realtime = null;
-    state.channel = null;
+    state.channel  = null;
   }
 
   state.realtime = new Ably.Realtime({
@@ -232,14 +298,14 @@ async function connect(restored = false) {
     state.connected = true;
     hideReconnect();
     renderGame();
-    // Announce our seat so the opponent sees us (on both fresh join and restore)
+    // Announce our seat so the opponent can see us
     if (state.mySeat !== null) {
       await state.channel.publish('seat-claim', {
         seat:     state.mySeat,
         name:     state.me.name,
         emoji:    state.me.emoji,
         clientId: state.myClientId,
-        restored, // lets opponent show "reconnected" vs "joined"
+        restored,
         time:     Date.now(),
       });
       renderGame();
@@ -277,17 +343,12 @@ async function connect(restored = false) {
     }
 
     if (msg.name === 'seat-claim') {
-      // Accept the claim only if:
-      //   a) the incoming clientId owns this seat (their own echo or a real claim), OR
-      //   b) the seat is currently empty
-      // Never allow a different clientId to overwrite an already-occupied seat.
+      // Only write to a seat if it's empty or belongs to the same clientId
       const existing = state.rs.seats[d.seat];
-      const isOccupiedByOther = existing && existing.clientId !== d.clientId;
-      if (!isOccupiedByOther) {
+      if (!existing || existing.clientId === d.clientId) {
         state.rs.seats[d.seat] = {
           name: d.name, emoji: d.emoji, seat: d.seat, clientId: d.clientId,
         };
-        // Show feed message only for the opponent's claim (not our own echo)
         if (d.clientId !== state.myClientId) {
           const verb = d.restored ? 'reconnected to' : 'joined';
           state.rs.feed.unshift({
@@ -346,7 +407,7 @@ function renderPlayers() {
     pill.className = 'player-pill' + (state.rs.activeSeat === i ? ' active' : '');
     pill.innerHTML = seat
       ? `<span class="pip"></span><span>${seat.emoji} ${esc(seat.name)}</span><span class="seat-label">${labels[i]}</span>`
-      : `<span class="pip"></span><span style="color:var(--faint)">Open seat</span><span class="seat-label">${labels[i]}</span>`;
+      : `<span class="pip"></span><span style="color:var(--color-text-faint)">Open seat</span><span class="seat-label">${labels[i]}</span>`;
     view.appendChild(pill);
   });
 }
@@ -360,7 +421,7 @@ function renderFeed() {
   }
   feed.innerHTML = state.rs.feed.map((item) => {
     if (item.type === 'system')
-      return `<article class="event system"><div class="event-head"><span class="event-who" style="color:var(--faint)">Room</span><span class="event-time">${timeText(item.time)}</span></div><div class="event-body">${esc(item.text)}</div></article>`;
+      return `<article class="event system"><div class="event-head"><span class="event-who" style="color:var(--color-text-faint)">Room</span><span class="event-time">${timeText(item.time)}</span></div><div class="event-body">${esc(item.text)}</div></article>`;
     return `<article class="event ${item.action}"><div class="event-head"><span class="event-who">${item.emoji} ${esc(item.name)}</span><span class="event-action ${item.action}">${item.action.toUpperCase()}</span><span class="event-time">${timeText(item.time)}</span></div>${item.text ? `<div class="event-body">${linkify(item.text)}</div>` : ''}</article>`;
   }).join('');
 }
@@ -371,10 +432,10 @@ function renderComposer() {
   if (!sendBtn || !hint) return;
   const myTurn = state.mySeat !== null && state.rs.activeSeat === state.mySeat && state.channel && state.connected;
   sendBtn.disabled = !myTurn;
-  if (!state.room)           hint.innerHTML = 'Create or join a room first.';
+  if (!state.room)                hint.innerHTML = 'Create or join a room first.';
   else if (state.mySeat === null) hint.innerHTML = 'Waiting to claim a seat…';
-  else if (!myTurn)          hint.innerHTML = `Waiting for opponent's <strong>${state.rs.next}</strong>…`;
-  else                       hint.innerHTML = `Your turn — send <strong>${state.rs.next.toUpperCase()}</strong>`;
+  else if (!myTurn)               hint.innerHTML = `Waiting for opponent's <strong>${state.rs.next}</strong>…`;
+  else                            hint.innerHTML = `Your turn — send <strong>${state.rs.next.toUpperCase()}</strong>`;
   const turnText = $('turnText');
   if (turnText) {
     const cs = state.rs.seats[state.rs.activeSeat];
@@ -392,13 +453,13 @@ function renderSyncBadge() {
 // ── SEND TURN ─────────────────────────────────────────────────────────────
 async function sendTurn() {
   showFieldError($('composerError'), '');
-  if (!state.channel)          { showFieldError($('composerError'), 'Not connected.'); return; }
-  if (state.mySeat === null)   { showFieldError($('composerError'), 'Seat not set.'); return; }
-  if (state.rs.activeSeat !== state.mySeat) { showFieldError($('composerError'), 'Not your turn.'); return; }
+  if (!state.channel)                              { showFieldError($('composerError'), 'Not connected.'); return; }
+  if (state.mySeat === null)                       { showFieldError($('composerError'), 'Seat not set.'); return; }
+  if (state.rs.activeSeat !== state.mySeat)        { showFieldError($('composerError'), 'Not your turn.'); return; }
   const seat = state.rs.seats[state.mySeat];
-  if (!seat) { showFieldError($('composerError'), 'Seat missing — refresh.'); return; }
+  if (!seat)                                       { showFieldError($('composerError'), 'Seat missing — refresh.'); return; }
   const text = ($('messageInput').value || '').trim();
-  if (text.length > 1000) { showFieldError($('composerError'), 'Message too long (max 1000).'); return; }
+  if (text.length > 1000)                          { showFieldError($('composerError'), 'Message too long (max 1000).'); return; }
 
   $('sendBtn').disabled = true;
   try {
@@ -407,8 +468,9 @@ async function sendTurn() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         roomCode: state.room, action: state.rs.next,
-        seat: state.mySeat, name: seat.name, emoji: seat.emoji,
-        text, expectedNext: state.rs.next,
+        seat: state.mySeat,   name: seat.name,
+        emoji: seat.emoji,    text,
+        expectedNext: state.rs.next,
       }),
     });
     const data = await res.json();
