@@ -8,9 +8,8 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Inter:opsz,wght@14..32,300..800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/public/style.css" />
-  <script src="https://cdn.ably.com/lib/ably.min-1.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+  <link rel="stylesheet" href="style.css" />
+  <script defer src="/_vercel/insights/script.js"></script>
 </head>
 <body>
 
@@ -18,7 +17,6 @@
 <div id="screenOnboard" class="screen active">
   <button class="theme-btn" id="themeToggle" aria-label="Toggle theme">☀︎</button>
 
-  <!-- Full-bleed animated court -->
   <div class="court-scene" aria-hidden="true">
     <div class="cs-border"></div>
     <div class="cs-net"></div>
@@ -30,7 +28,6 @@
     <div class="cs-glow cs-glow--gold"></div>
   </div>
 
-  <!-- Centered content over court -->
   <div class="ob-wrap">
     <div class="ob-wordmark">
       <svg width="28" height="28" viewBox="0 0 48 48" fill="none" aria-hidden="true">
@@ -48,19 +45,10 @@
 
     <p class="ob-tagline">One link. Take turns.<br>Attach anything.</p>
 
-    <!-- Identity card -->
     <div class="ob-card" id="cardName">
       <div class="ob-field">
         <label class="ob-label" for="obName">Your name</label>
-        <input
-          id="obName"
-          class="ob-input"
-          type="text"
-          placeholder="Enter your name…"
-          maxlength="24"
-          autocomplete="off"
-          spellcheck="false"
-        />
+        <input id="obName" class="ob-input" type="text" placeholder="Enter your name…" maxlength="24" autocomplete="off" spellcheck="false" />
         <span class="ob-err" id="obNameError" role="alert"></span>
       </div>
       <div class="ob-field">
@@ -85,18 +73,14 @@
     <p class="sh-eyebrow" id="shareYouLabel"></p>
     <h2 class="sh-heading">Invite your<br><em>opponent.</em></h2>
     <p class="sh-sub">They scan or open your link — then the rally begins.</p>
-
     <div class="sh-qr-card">
       <div class="qr-box" id="qrBox"></div>
     </div>
-
     <div class="sh-link-row">
       <span class="sh-link-text" id="shareUrl"></span>
       <button class="sh-copy-btn" id="shareCopyBtn">Copy link</button>
     </div>
-
     <button class="sh-ghost-btn" id="shareNotifyBtn">🔔 Notify me when they join</button>
-
     <div class="sh-waiting">
       <span class="sh-dot"></span><span class="sh-dot"></span><span class="sh-dot"></span>
       <span class="sh-waiting-label">Waiting for opponent…</span>
@@ -123,7 +107,6 @@
   </header>
 
   <div class="g-layout">
-    <!-- Arena -->
     <section class="g-arena-col">
       <div class="arena" id="arena" role="img" aria-label="Ping pong court">
         <div class="a-net"></div>
@@ -146,20 +129,13 @@
       <p class="a-turn-text" id="turnText">Waiting for players…</p>
     </section>
 
-    <!-- Composer + Feed -->
     <section class="g-side">
       <div class="composer">
         <div class="composer-top">
           <span class="my-badge" id="myBadge"></span>
           <span class="char-count" id="charCount">0 / 280</span>
         </div>
-        <textarea
-          id="messageInput"
-          class="composer-input"
-          placeholder="Attach a note, link, or song… (optional)"
-          maxlength="280"
-          rows="3"
-        ></textarea>
+        <textarea id="messageInput" class="composer-input" placeholder="Attach a note, link, or song… (optional)" maxlength="280" rows="3"></textarea>
         <span class="ob-err" id="composerError" role="alert"></span>
         <div class="composer-row">
           <button class="send-btn" id="sendBtn">Send</button>
@@ -170,7 +146,6 @@
         </div>
         <p class="composer-hint">⌘↵ to send · First move is always <strong>ping</strong></p>
       </div>
-
       <div class="feed-panel">
         <div class="feed-hd">Rally feed</div>
         <div class="feed" id="feed"></div>
@@ -195,6 +170,8 @@
   </div>
 </div>
 
-<script src="/public/app.js"></script>
+<script src="https://cdn.ably.com/lib/ably.min-1.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<script src="app.js"></script>
 </body>
 </html>
