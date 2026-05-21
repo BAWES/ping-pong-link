@@ -12,9 +12,11 @@ vi.mock('ably', () => {
     capability: '{}',
   });
 
-  const MockRest = vi.fn(() => ({
-    auth: { createTokenRequest },
-  }));
+  // Use class syntax so `new` works
+  const MockRest = vi.fn(function (key) {
+    this.key = key;
+    this.auth = { createTokenRequest };
+  });
 
   return {
     default: { Rest: MockRest },
@@ -22,8 +24,8 @@ vi.mock('ably', () => {
   };
 });
 
-import AblyMock from 'ably';
-const { MockRest, createTokenRequest } = AblyMock.__mocks;
+import * as AblyModule from 'ably';
+const { MockRest, createTokenRequest } = AblyModule.__mocks;
 
 describe('api/ably-auth.js', () => {
   let handler;

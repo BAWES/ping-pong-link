@@ -4,9 +4,14 @@ import { mockReq, mockRes } from './helpers.js';
 // Mock the ably module before importing the handler
 vi.mock('ably', () => {
   const publish = vi.fn().mockResolvedValue(undefined);
-  const MockChannel = vi.fn(() => ({ publish }));
+  function MockChannel() { return { publish }; }
+  MockChannel.prototype.publish = publish;
   const MockChannels = { get: vi.fn(() => new MockChannel()) };
-  const MockRest = vi.fn(() => ({ channels: MockChannels }));
+  // Use class syntax so `new` works
+  const MockRest = vi.fn(function (key) {
+    this.key = key;
+    this.channels = MockChannels;
+  });
 
   return {
     default: { Rest: MockRest },
@@ -14,15 +19,14 @@ vi.mock('ably', () => {
   };
 });
 
-import AblyMock from 'ably';
-const { MockRest, MockChannels, publish } = AblyMock.__mocks;
+import * as AblyModule from 'ably';
+const { MockRest, MockChannels, publish } = AblyModule.__mocks;
 
 describe('api/publish.js', () => {
   let handler;
 
   beforeEach(async () => {
     vi.stubEnv('ABLY_API_KEY', 'test-key');
-    // Re-import to get fresh handler with stubbed env
     const mod = await import('../publish.js');
     handler = mod.default;
     vi.clearAllMocks();
@@ -71,20 +75,21 @@ describe('api/publish.js', () => {
     const res = mockRes();
     await handler(req, res);
     expect(res._status).toBe(400);
-    expect(res._body).toEqual({ error: 'Missing required fields' });
+    expect(res._body.error).toContain('Invalid or missing room code');
+    expect(res._body.error).toContain('Name is required');
   });
 
   it('returns 400 when action is not ping or pong', async () => {
     const req = mockReq({
-      body: { roomCode: 'R1', action: 'invalid', seat: 0, name: 'A', emoji: 'X' },
+      body: { roomCode: 'R1', action: 'invalid', seat: 0, name: 'A', emoji: 'X', expectedNext: 'ping' },
     });
     const res = mockRes();
     await handler(req, res);
     expect(res._status).toBe(400);
-    expect(res._body).toEqual({ error: 'Action must be ping or pong' });
+    expect(res._body.error).toContain('Action must be ping or pong');
   });
 
-  it('returns 409 when turn order is violated', async () => {
+  it('returns 400 when turn order is violated (now validated pre-Ably)', async () => {
     const req = mockReq({
       body: {
         roomCode: 'R1', action: 'pong', seat: 0, name: 'A', emoji: 'X',
@@ -93,7 +98,7 @@ describe('api/publish.js', () => {
     });
     const res = mockRes();
     await handler(req, res);
-    expect(res._status).toBe(409);
+    expect(res._status).toBe(400);
     expect(res._body.error).toContain('Expected ping, got pong');
   });
 
@@ -165,5 +170,25 @@ describe('api/publish.js', () => {
 
     expect(res._status).toBe(500);
     expect(res._body.error).toBe('Ably error');
+  });
+
+  it('returns 429 when rate limit is exceeded', async () => {
+    // Send 11 requests rapidly (rate limit is 10/sec)
+    for (let i = 0; i < 10; i++) {
+      const body = {
+        roomCode: 'RATE_TEST', action: 'ping', seat: 0, name: 'A', emoji: 'X',
+        expectedNext: 'ping',
+      };
+      await handler(mockReq({ body }), mockRes());
+    }
+    const body = {
+      roomCode: 'RATE_TEST', action: 'ping', seat: 0, name: 'A', emoji: 'X',
+      expectedNext: 'ping',
+    };
+    const req = mockReq({ body });
+    const res = mockRes();
+    await handler(req, res);
+    expect(res._status).toBe(429);
+    expect(res._body.error).toContain('Too many requests');
   });
 });
