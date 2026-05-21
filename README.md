@@ -12,6 +12,7 @@ A real-time, turn-based ping pong messaging game. Share a link, pick your name a
 ## Setup
 
 ### 1. Get an Ably API key
+
 1. Sign up at [ably.com](https://ably.com) — free
 2. Create an app, copy the **Root API key** from the dashboard
 
@@ -20,23 +21,28 @@ A real-time, turn-based ping pong messaging game. Share a link, pick your name a
 [![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https://github.com/BAWES/ping-pong-link)
 
 Or via CLI:
+
 ```bash
 npm i -g vercel
 vercel
 ```
 
 ### 3. Add environment variable
+
 In Vercel project → Settings → Environment Variables:
+
 ```
 ABLY_API_KEY=your_root_key_here
 ```
 
 Locally, create `.env.local`:
+
 ```
 ABLY_API_KEY=your_root_key_here
 ```
 
 ## How to play
+
 1. Open the app, enter a room code → **Make room**
 2. Copy the link and send it to your friend
 3. Each player claims a seat (Ping side / Pong side) and sets name + emoji
@@ -44,6 +50,7 @@ ABLY_API_KEY=your_root_key_here
 5. Optionally attach a text note, link, or song to each hit
 
 ## Project structure
+
 ```
 /
 ├── public/

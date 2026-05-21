@@ -11,7 +11,7 @@ jobs:
       - name: Validate branch name
         run: |
           BRANCH="${{ github.head_ref }}"
-          if ! echo "$BRANCH" | grep -qE '^(feature|fix|chore)\/[A-Z]+-[0-9]+-'; then
+          if ! echo "$BRANCH" | grep -qE '^(feat|feature|fix|chore)\/[A-Z]+-[0-9]+-'; then
             echo "Branch name '$BRANCH' does not match convention."
             echo "Expected: feature/STU-N-*, fix/STU-N-*, or chore/STU-N-*"
             exit 1

@@ -1,108 +1,180 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en" data-theme="light">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Ping Pong Link</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/public/style.css" />
-  <script src="https://cdn.ably.com/lib/ably.min-1.js"></script>
-</head>
-<body>
-<div class="shell">
-  <header class="topbar">
-    <a class="brand" href="#app" aria-label="Ping Pong Link home">
-      <div class="logo" aria-hidden="true">
-        <svg width="28" height="28" viewBox="0 0 28 28" fill="none"><rect x="3" y="5" width="6" height="18" rx="3" fill="currentColor"/><rect x="19" y="5" width="6" height="18" rx="3" fill="currentColor"/><circle cx="14" cy="14" r="3.5" fill="currentColor"/></svg>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Ping Pong Link</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Inter:wght@400;500;600;700;800&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="style.css" />
+    <script src="https://cdn.ably.com/lib/ably.min-1.js"></script>
+  </head>
+  <body>
+    <div class="shell">
+      <header class="topbar">
+        <a class="brand" href="#app" aria-label="Ping Pong Link home">
+          <div class="logo" aria-hidden="true">
+            <svg width="28" height="28" viewBox="0 0 28 28" fill="none">
+              <rect x="3" y="5" width="6" height="18" rx="3" fill="currentColor" />
+              <rect x="19" y="5" width="6" height="18" rx="3" fill="currentColor" />
+              <circle cx="14" cy="14" r="3.5" fill="currentColor" />
+            </svg>
+          </div>
+          <div><strong class="brand-name">Ping / Pong</strong><span class="brand-sub">Realtime rally</span></div>
+        </a>
+        <button class="theme-toggle" id="themeToggle" aria-label="Switch theme">☾</button>
+      </header>
+
+      <!-- reconnect banner -->
+      <div id="reconnectBanner" class="banner reconnect-banner hidden" role="status" aria-live="polite">
+        <span id="reconnectMsg">Reconnecting…</span>
+        <button
+          class="btn btn-secondary"
+          id="reconnectBtn"
+          style="min-height: 36px; padding: 0.5rem 0.85rem; font-size: var(--text-xs)"
+        >
+          Reconnect now
+        </button>
       </div>
-      <div><strong class="brand-name">Ping / Pong</strong><span class="brand-sub">Realtime rally</span></div>
-    </a>
-    <button class="theme-toggle" id="themeToggle" aria-label="Switch theme">☾</button>
-  </header>
 
-  <main id="app">
-    <section class="hero">
-      <div class="panel hero-copy">
-        <span class="eyebrow">Realtime · WebSocket sync · Notifications</span>
-        <h1>Two players. One link. Live rally.</h1>
-        <p class="lead">Create a room, share the link, claim a side. Alternate ping and pong in real time — each hit can carry a note, a URL, or a song.</p>
-        <div class="mini-points">
-          <div class="mini-card"><strong>Realtime room</strong><span class="muted">Moves sync live over Ably WebSockets.</span></div>
-          <div class="mini-card"><strong>Player identity</strong><span class="muted">Name and emoji before you join.</span></div>
-          <div class="mini-card"><strong>Notifications</strong><span class="muted">Browser alerts when the other player hits.</span></div>
-        </div>
-      </div>
-
-      <div class="stack">
-        <section class="panel card">
-          <h2>Room</h2>
-          <p class="muted">Both players open the same link. Moves sync instantly.</p>
-          <div class="room-link">
-            <input id="roomCode" placeholder="Room code" maxlength="24" />
-            <button class="btn btn-secondary" id="makeRoomBtn">Make room</button>
-            <button class="btn btn-ghost" id="copyRoomBtn">Copy link</button>
-          </div>
-          <div class="actions" style="margin-top:1rem">
-            <button class="btn btn-secondary" id="notifyBtn">🔔 Enable notifications</button>
-          </div>
-          <p class="footer-note">Deploy on Vercel → add <code>ABLY_API_KEY</code> env var → share the link.</p>
-        </section>
-
-        <section class="panel card">
-          <h2>Your player</h2>
-          <div class="grid-2">
-            <label>Name<input id="playerName" placeholder="Khalid" maxlength="24" /></label>
-            <label>Emoji<input id="playerEmoji" placeholder="🏓" maxlength="2" /></label>
-          </div>
-          <div style="margin-top:1rem"><div class="helper" style="margin-bottom:.5rem">Quick pick</div><div class="emoji-grid" id="emojiGrid"></div></div>
-          <div class="actions" style="margin-top:1rem">
-            <button class="btn btn-primary" id="savePlayerBtn">Save player</button>
-            <button class="btn btn-secondary" id="claimSeatBtn">Claim seat</button>
-          </div>
-        </section>
-      </div>
-    </section>
-
-    <section class="stage">
-      <section class="panel table-card">
-        <div class="table-top">
-          <div>
-            <div class="statusline">
-              <span class="badge turn" id="turnBadge">Waiting for room</span>
-              <span class="badge wait" id="syncBadge">Disconnected</span>
+      <main id="app">
+        <section class="hero">
+          <div class="panel hero-copy">
+            <span class="eyebrow">Realtime · WebSocket sync · Notifications</span>
+            <h1>Two players. One link. Live rally.</h1>
+            <p class="lead">
+              Create a room, share the link, claim a side. Alternate ping and pong in real time — each hit can carry a
+              note, a URL, or a song.
+            </p>
+            <div class="mini-points">
+              <div class="mini-card">
+                <strong>Realtime room</strong><span class="muted">Moves sync live over Ably WebSockets.</span>
+              </div>
+              <div class="mini-card">
+                <strong>Player identity</strong><span class="muted">Name and emoji before you join.</span>
+              </div>
+              <div class="mini-card">
+                <strong>Notifications</strong><span class="muted">Browser alerts when the other player hits.</span>
+              </div>
             </div>
-            <p class="muted" id="turnText" style="margin-top:.7rem">Create a room to connect.</p>
           </div>
-          <div class="players" id="playersView"></div>
-        </div>
-        <div class="arena" aria-hidden="true">
-          <div class="paddle left"></div>
-          <div class="paddle right"></div>
-          <div class="ball" id="ball"></div>
-          <div class="impact" id="impactText">No rally yet</div>
-        </div>
-        <div class="composer">
-          <label>Attach a note, link, or song (optional)
-            <textarea id="messageInput" placeholder="Ping — song: Nujabes / link: https://... / or just write something"></textarea>
-          </label>
-          <div class="actions">
-            <button class="btn btn-primary" id="sendBtn">Send move</button>
-            <button class="btn btn-ghost" id="resetRoomBtn">Reset room</button>
+
+          <div class="stack">
+            <section class="panel card">
+              <h2>Room</h2>
+              <p class="muted">Both players open the same link. Moves sync instantly.</p>
+              <div class="room-link">
+                <input
+                  id="roomCode"
+                  placeholder="Room code"
+                  maxlength="24"
+                  aria-label="Room code"
+                  aria-required="true"
+                />
+                <button class="btn btn-secondary" id="makeRoomBtn">Make room</button>
+                <button class="btn btn-ghost" id="copyRoomBtn">Copy link</button>
+              </div>
+              <div class="field-error" id="roomCodeError"></div>
+              <div class="actions" style="margin-top: 1rem">
+                <button class="btn btn-secondary" id="notifyBtn">🔔 Enable notifications</button>
+              </div>
+              <p class="footer-note">Deploy on Vercel → add <code>ABLY_API_KEY</code> env var → share the link.</p>
+            </section>
+
+            <section class="panel card">
+              <h2>Your player</h2>
+              <div class="grid-2">
+                <label
+                  >Name<input
+                    id="playerName"
+                    placeholder="Khalid"
+                    maxlength="32"
+                    aria-label="Your display name"
+                    aria-required="true"
+                /></label>
+                <label
+                  >Emoji<input
+                    id="playerEmoji"
+                    placeholder="🏓"
+                    maxlength="2"
+                    aria-label="Your emoji icon"
+                    aria-required="true"
+                /></label>
+              </div>
+              <div class="field-error" id="playerError"></div>
+              <div style="margin-top: 1rem">
+                <div class="helper" style="margin-bottom: 0.5rem">Quick pick</div>
+                <div class="emoji-grid" id="emojiGrid" role="radiogroup" aria-label="Choose an emoji"></div>
+              </div>
+              <div class="actions" style="margin-top: 1rem">
+                <button class="btn btn-primary" id="savePlayerBtn">Save player</button>
+                <button class="btn btn-secondary" id="claimSeatBtn">Claim seat</button>
+              </div>
+            </section>
           </div>
-          <div class="helper">First move is always <strong>ping</strong>. Turns alternate strictly. Server validates the order.</div>
+        </section>
+
+        <!-- error banner -->
+        <div id="errorBanner" class="banner error-banner hidden" role="alert" aria-live="assertive">
+          <span id="errorMsg"></span>
+          <button class="banner-dismiss" id="errorDismiss" aria-label="Dismiss error">&times;</button>
         </div>
-      </section>
 
-      <aside class="panel" style="display:flex;flex-direction:column">
-        <div class="card" style="padding-bottom:0"><h2>Rally feed</h2><p class="muted">Live timeline.</p></div>
-        <div class="feed" id="feed"></div>
-      </aside>
-    </section>
-  </main>
-</div>
+        <section class="stage">
+          <section class="panel table-card" aria-label="Game table">
+            <div class="table-top">
+              <div>
+                <div class="statusline">
+                  <span class="badge turn" id="turnBadge" aria-live="polite">Waiting for room</span>
+                  <span class="badge wait" id="syncBadge" aria-live="polite">Disconnected</span>
+                </div>
+                <p class="muted" id="turnText" style="margin-top: 0.7rem">Create a room to connect.</p>
+              </div>
+              <div class="players" id="playersView"></div>
+            </div>
+            <div class="arena" aria-hidden="true">
+              <div class="paddle left"></div>
+              <div class="paddle right"></div>
+              <div class="ball" id="ball"></div>
+              <div class="impact" id="impactText">No rally yet</div>
+            </div>
+            <div class="composer">
+              <label
+                >Attach a note, link, or song (optional)
+                <textarea
+                  id="messageInput"
+                  placeholder="Ping — song: Nujabes / link: https://... / or just write something"
+                  maxlength="1000"
+                  aria-label="Message attachment for your move"
+                ></textarea>
+              </label>
+              <div class="char-count" id="charCount" aria-live="polite">0 / 1000</div>
+              <div class="field-error" id="composerError"></div>
+              <div class="actions">
+                <button class="btn btn-primary" id="sendBtn" aria-label="Send your move">Send move</button>
+                <button class="btn btn-ghost" id="resetRoomBtn">Reset room</button>
+              </div>
+              <div class="helper">
+                First move is always <strong>ping</strong>. Turns alternate strictly. Server validates the order.
+              </div>
+            </div>
+          </section>
 
-<script src="/public/app.js"></script>
-</body>
+          <aside class="panel" style="display: flex; flex-direction: column" aria-label="Rally feed">
+            <div class="card" style="padding-bottom: 0">
+              <h2>Rally feed</h2>
+              <p class="muted">Live timeline.</p>
+            </div>
+            <div class="feed" id="feed" role="log" aria-live="polite" aria-label="Rally events"></div>
+          </aside>
+        </section>
+      </main>
+    </div>
+
+    <script src="app.js"></script>
+  </body>
 </html>

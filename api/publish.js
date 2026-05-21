@@ -23,7 +23,9 @@ function rateLimit(roomCode) {
 // Purge stale entries every 60s
 setInterval(() => {
   const now = Date.now();
-  for (const [k, v] of rateMap) { if (now > v.resetAt) rateMap.delete(k); }
+  for (const [k, v] of rateMap) {
+    if (now > v.resetAt) rateMap.delete(k);
+  }
 }, 60_000).unref?.();
 
 // ── validators ────────────────────────────────────────────────────────────
@@ -86,7 +88,7 @@ export default async function handler(req, res) {
     name: String(body.name).trim().slice(0, 32),
     emoji: String(body.emoji).slice(0, 2),
     text: String(body.text || '').slice(0, 1000),
-    time: Date.now()
+    time: Date.now(),
   };
 
   try {
