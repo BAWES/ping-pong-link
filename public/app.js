@@ -1,12 +1,33 @@
 // ── CONFIG ────────────────────────────────────────────────────────────────
 const EMOJI_CHOICES = ['🏓','🔥','🦄','🤖','🐯','🎧','🌊','⚡','🍉','🛰️','🐼','🎯','🎸','🌙','🦊','🎨'];
 const MAX_FEED = 60;
-// Session key is scoped to the room so two tabs in different rooms don't clash
 const sessKey = (room) => `pp:${room}`;
 
+// ── CANONICAL URL ────────────────────────────────────────────────────────
+// Always share the production URL, never a Vercel preview branch URL.
+// We detect Vercel preview deployments by their hostname pattern
+// (e.g. ping-pong-link-git-<branch>-<org>.vercel.app)
+// and replace it with the canonical production host.
+const PRODUCTION_HOST = 'ping-pong-link.vercel.app';
+function canonicalOrigin() {
+  const h = location.hostname;
+  // If we're on localhost or the exact production host, use as-is
+  if (h === 'localhost' || h === '127.0.0.1' || h === PRODUCTION_HOST) {
+    return location.origin;
+  }
+  // Vercel preview pattern: <project>-git-<branch>-<org>.vercel.app
+  // or <project>-<hash>-<org>.vercel.app  — swap to production
+  if (h.endsWith('.vercel.app')) {
+    return 'https://' + PRODUCTION_HOST;
+  }
+  // Custom domain or anything else — use as-is
+  return location.origin;
+}
+function shareUrl(roomCode) {
+  return canonicalOrigin() + '/#room=' + encodeURIComponent(roomCode);
+}
+
 // ── SESSION HELPERS ───────────────────────────────────────────────────────
-// Stored: { name, emoji, seat, clientId }
-// Keyed per-room so each room/tab has its own record.
 function saveSession(room, data) {
   try { sessionStorage.setItem(sessKey(room), JSON.stringify(data)); } catch {}
 }
@@ -16,7 +37,6 @@ function loadSession(room) {
 function clearSession(room) {
   try { sessionStorage.removeItem(sessKey(room)); } catch {}
 }
-// Generate a stable per-tab client ID, stored in sessionStorage (not per-room)
 function getOrCreateClientId() {
   try {
     let id = sessionStorage.getItem('pp:clientId');
@@ -29,7 +49,7 @@ function getOrCreateClientId() {
 const state = {
   room: '',
   me: { name: '', emoji: '🏓' },
-  mySeat: null,        // 0 = ping/host, 1 = pong/guest — assigned ONCE, never changed
+  mySeat: null,
   myClientId: getOrCreateClientId(),
   rs: { seats: [null, null], next: 'ping', activeSeat: 0, lastMove: null, feed: [] },
   realtime: null,
@@ -115,9 +135,6 @@ function showStep(id) {
 function setupOnboarding() {
   const hashRoom = readHash();
 
-  // ── RESTORE: same tab refreshed while in a game ────────────────────────
-  // Check if this tab has a saved session for the current room hash.
-  // If yes, skip onboarding entirely and jump straight back into the game.
   if (hashRoom) {
     const saved = loadSession(hashRoom);
     if (saved && saved.clientId === state.myClientId && saved.seat != null) {
@@ -130,7 +147,6 @@ function setupOnboarding() {
     }
   }
 
-  // ── FRESH ONBOARDING ──────────────────────────────────────────────────
   buildEmojiGrid('ob-emoji-row');
   setTheme(theme);
 
@@ -158,28 +174,25 @@ function setupOnboarding() {
     showStep('step-room');
   };
 
-  // HOST: creates room → gets seat 0 (ping) deterministically
   $('host-create-btn').onclick = async () => {
     const code = shortCode();
     state.room = code;
     setHash(code);
-    const shareUrl = location.href;
-    $('qr-link-input').value = shareUrl;
-    buildQR('qr-wrap', shareUrl);
+    const url = shareUrl(code);          // ← always canonical production URL
+    $('qr-link-input').value = url;
+    buildQR('qr-wrap', url);
     showStep('step-qr');
   };
 
   $('qr-copy-btn').onclick = () => copyText($('qr-link-input').value, $('qr-copy-btn'));
 
-  // Host clicks "I'm ready" → seat 0
   $('qr-continue-btn').onclick = async () => {
-    state.mySeat = 0; // HOST always ping side
+    state.mySeat = 0;
     persistAndEnter();
   };
 
-  // GUEST: arrives via link → seat 1 (pong) deterministically
   $('guest-join-btn').onclick = async () => {
-    state.mySeat = 1; // GUEST always pong side
+    state.mySeat = 1;
     persistAndEnter();
   };
 
@@ -196,7 +209,6 @@ function setupOnboarding() {
   if ($('themeToggle')) $('themeToggle').onclick = toggleTheme;
 }
 
-// Called once seat is assigned — persist then enter game
 function persistAndEnter() {
   saveSession(state.room, {
     name: state.me.name,
@@ -232,14 +244,13 @@ async function connect(restored = false) {
     state.connected = true;
     hideReconnect();
     renderGame();
-    // Announce our seat so the opponent sees us (on both fresh join and restore)
     if (state.mySeat !== null) {
       await state.channel.publish('seat-claim', {
         seat:     state.mySeat,
         name:     state.me.name,
         emoji:    state.me.emoji,
         clientId: state.myClientId,
-        restored, // lets opponent show "reconnected" vs "joined"
+        restored,
         time:     Date.now(),
       });
       renderGame();
@@ -277,17 +288,12 @@ async function connect(restored = false) {
     }
 
     if (msg.name === 'seat-claim') {
-      // Accept the claim only if:
-      //   a) the incoming clientId owns this seat (their own echo or a real claim), OR
-      //   b) the seat is currently empty
-      // Never allow a different clientId to overwrite an already-occupied seat.
       const existing = state.rs.seats[d.seat];
       const isOccupiedByOther = existing && existing.clientId !== d.clientId;
       if (!isOccupiedByOther) {
         state.rs.seats[d.seat] = {
           name: d.name, emoji: d.emoji, seat: d.seat, clientId: d.clientId,
         };
-        // Show feed message only for the opponent's claim (not our own echo)
         if (d.clientId !== state.myClientId) {
           const verb = d.restored ? 'reconnected to' : 'joined';
           state.rs.feed.unshift({
@@ -422,7 +428,7 @@ async function sendTurn() {
 
 // ── QR MODAL ──────────────────────────────────────────────────────────────
 function openQRModal() {
-  const url = location.href;
+  const url = shareUrl(state.room);       // ← always canonical production URL
   $('qr-modal-link').value = url;
   buildQR('qr-modal-wrap', url);
   $('qr-modal').classList.remove('hidden');
