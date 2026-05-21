@@ -7,14 +7,24 @@
     "build": "echo ok",
     "lint": "prettier --check . && eslint .",
     "format": "prettier --write .",
-    "test": "vitest run"
+    "test": "vitest run",
+    "prepare": "husky"
   },
   "dependencies": {
     "ably": "^2.6.0"
   },
   "devDependencies": {
+    "@commitlint/cli": "^21.0.1",
+    "@commitlint/config-conventional": "^21.0.1",
     "eslint": "^9.0.0",
+    "husky": "^9.1.7",
+    "lint-staged": "^17.0.5",
     "prettier": "^3.4.0",
     "vitest": "^4.1.7"
+  },
+  "type": "module",
+  "lint-staged": {
+    "*.{js,ts,tsx,jsx}": ["eslint --fix", "prettier --write"],
+    "*.{json,md,css,html}": ["prettier --write"]
   }
 }

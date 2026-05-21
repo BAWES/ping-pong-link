@@ -3,28 +3,45 @@ name: CI
 on:
   pull_request:
     branches: [main]
-  push:
-    branches: [main]
 
 jobs:
-  lint:
+  branch-name:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Validate branch name
+        run: |
+          BRANCH="${{ github.head_ref }}"
+          if ! echo "$BRANCH" | grep -qE '^(feature|fix|chore)\/[A-Z]+-[0-9]+-'; then
+            echo "Branch name '$BRANCH' does not match convention."
+            echo "Expected: feature/STU-N-*, fix/STU-N-*, or chore/STU-N-*"
+            exit 1
+          fi
+
+  lint-and-test:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: npm
       - run: npm ci
       - run: npm run lint
+      - run: npm test
 
-  test:
+  clean-tree:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: npm
       - run: npm ci
-      - run: npm test
+      - name: Check clean working tree
+        run: |
+          if [ -n "$(git status --porcelain)" ]; then
+            echo "Working tree is dirty after npm ci."
+            git status
+            exit 1
+          fi
