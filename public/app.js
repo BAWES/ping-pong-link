@@ -2,11 +2,28 @@
 const EMOJI_CHOICES = ['🏓', '🔥', '🦄', '🤖', '🐯', '🎧', '🌊', '⚡', '🍉', '🛰️', '🐼', '🎯', '🎸', '🌙', '🦊', '🎯'];
 const MAX_FEED = 60;
 
+// ── IDENTITY PERSISTENCE (sessionStorage = per-tab, works in iframes) ────
+// We store {name, emoji, seat, room} so a refresh in the same tab restores
+// the player's identity and seat without overriding the opponent.
+function saveSession(patch) {
+  try {
+    const cur = JSON.parse(sessionStorage.getItem('pp_session') || '{}');
+    sessionStorage.setItem('pp_session', JSON.stringify({ ...cur, ...patch }));
+  } catch {}
+}
+function loadSession() {
+  try { return JSON.parse(sessionStorage.getItem('pp_session') || '{}'); } catch { return {}; }
+}
+function clearSession() {
+  try { sessionStorage.removeItem('pp_session'); } catch {}
+}
+
 // ── STATE ─────────────────────────────────────────────────────────────────
 const state = {
   room: '',
   me: { name: '', emoji: '🏓' },
-  mySeat: null,
+  mySeat: null,            // 0 or 1 — set once, never re-assigned
+  myClientId: null,        // stable per-tab id stored in session
   rs: { seats: [null, null], next: 'ping', activeSeat: 0, lastMove: null, feed: [] },
   realtime: null,
   channel: null,
@@ -103,7 +120,32 @@ function buildQR(containerId, url) {
 }
 
 function setupOnboarding() {
+  // ── Restore session: if this tab already played in this room, skip onboarding
+  const session = loadSession();
   const hashRoom = readHash();
+
+  if (
+    session.name &&
+    session.emoji &&
+    session.room &&
+    session.seat != null &&
+    session.clientId &&
+    hashRoom === session.room
+  ) {
+    // Same tab refreshed mid-game — restore without re-onboarding
+    state.me.name   = session.name;
+    state.me.emoji  = session.emoji;
+    state.room      = session.room;
+    state.mySeat    = session.seat;
+    state.myClientId = session.clientId;
+    enterGameRestored();
+    return;
+  }
+
+  // Fresh session — pre-fill name/emoji if available
+  if (session.name) $('ob-name').value = session.name;
+  if (session.emoji) state.me.emoji = session.emoji;
+
   buildEmojiGrid('ob-emoji-row');
   setTheme(theme);
 
@@ -172,36 +214,87 @@ async function enterGame() {
   await connect();
 }
 
+// Restored path: reconnect with saved seat, re-announce presence only
+async function enterGameRestored() {
+  showScreen('screen-game');
+  $('feedRoomCode').textContent = state.room;
+  renderGame();
+  await connect(/* restored= */ true);
+}
+
 // ── AUTO CLAIM SEAT ───────────────────────────────────────────────────────
+// Only called for NEW players. Checks that both conditions hold:
+//   1. This player has not already claimed a seat (mySeat === null)
+//   2. The seat index is actually empty in the room state
 async function autoClaimSeat() {
   if (!state.channel) {
     setTimeout(autoClaimSeat, 800);
     return;
   }
+  // Already seated (shouldn't happen, but guard anyway)
+  if (state.mySeat !== null) return;
+
   const open = state.rs.seats.findIndex((s) => !s);
-  const seat = open === -1 ? 0 : open;
-  state.mySeat = seat;
-  state.rs.seats[seat] = { name: state.me.name, emoji: state.me.emoji, seat };
-  await state.channel.publish('seat-claim', { seat, name: state.me.name, emoji: state.me.emoji, time: Date.now() });
+  if (open === -1) {
+    // Room full — join as spectator (no seat)
+    state.rs.feed.unshift({ type: 'system', text: 'Room is full — you joined as a spectator.', time: Date.now() });
+    renderGame();
+    return;
+  }
+  state.mySeat = open;
+  state.rs.seats[open] = { name: state.me.name, emoji: state.me.emoji, seat: open };
+
+  // Persist so a refresh in this tab restores the same seat
+  saveSession({
+    name: state.me.name,
+    emoji: state.me.emoji,
+    room: state.room,
+    seat: open,
+    clientId: state.myClientId,
+  });
+
+  await state.channel.publish('seat-claim', {
+    seat: open,
+    name: state.me.name,
+    emoji: state.me.emoji,
+    clientId: state.myClientId,
+    time: Date.now(),
+  });
   renderGame();
 }
 
 // ── ABLY CONNECT ──────────────────────────────────────────────────────────
-async function connect() {
+async function connect(restored = false) {
   if (!state.room) return;
   if (state.realtime) {
-    try {
-      state.realtime.close();
-    } catch {}
+    try { state.realtime.close(); } catch {}
     state.realtime = null;
     state.channel = null;
   }
-  const clientId = `${state.me.name || 'player'}-${Math.random().toString(36).slice(2, 6)}`;
+
+  // Use a stable clientId stored in session so reconnects don't look like new players
+  if (!state.myClientId) {
+    state.myClientId = `${state.me.name || 'player'}-${Math.random().toString(36).slice(2, 6)}`;
+  }
+  const clientId = state.myClientId;
+
   state.realtime = new Ably.Realtime({ authUrl: `/api/ably-auth?clientId=${encodeURIComponent(clientId)}` });
-  state.realtime.connection.on('connected', () => {
+  state.realtime.connection.on('connected', async () => {
     state.connected = true;
     hideReconnect();
     renderGame();
+    // If restoring from a refresh, re-announce seat presence so the opponent sees us
+    if (restored && state.mySeat !== null) {
+      await state.channel.publish('seat-claim', {
+        seat: state.mySeat,
+        name: state.me.name,
+        emoji: state.me.emoji,
+        clientId: state.myClientId,
+        time: Date.now(),
+        restored: true,   // flag so others know this is a rejoin, not a new claim
+      });
+      renderGame();
+    }
   });
   state.realtime.connection.on('disconnected', () => {
     state.connected = false;
@@ -218,6 +311,7 @@ async function connect() {
     showReconnect('Connection failed. Check network.', true);
     renderGame();
   });
+
   state.channel = state.realtime.channels.get(`pingpong:${state.room}`);
   state.channel.subscribe((msg) => {
     const d = msg.data;
@@ -233,12 +327,22 @@ async function connect() {
       renderGame();
     }
     if (msg.name === 'seat-claim') {
-      state.rs.seats[d.seat] = { name: d.name, emoji: d.emoji, seat: d.seat };
-      state.rs.feed.unshift({
-        type: 'system',
-        text: `${d.emoji} ${d.name} joined ${d.seat === 0 ? 'Ping side' : 'Pong side'}`,
-        time: Date.now(),
-      });
+      // Only update the room state if the incoming claim is for a DIFFERENT clientId
+      // than the one already occupying that seat. This prevents the second player's
+      // seat-claim broadcast from overwriting the first player's local seat.
+      const existing = state.rs.seats[d.seat];
+      const isMyOwnEcho = d.clientId && d.clientId === state.myClientId;
+      if (!existing || existing.clientId !== d.clientId) {
+        state.rs.seats[d.seat] = { name: d.name, emoji: d.emoji, seat: d.seat, clientId: d.clientId };
+      }
+      if (!isMyOwnEcho) {
+        const verb = d.restored ? 'reconnected to' : 'joined';
+        state.rs.feed.unshift({
+          type: 'system',
+          text: `${d.emoji} ${d.name} ${verb} ${d.seat === 0 ? 'Ping side' : 'Pong side'}`,
+          time: Date.now(),
+        });
+      }
       renderGame();
     }
     if (msg.name === 'reset') {
@@ -250,6 +354,7 @@ async function connect() {
         feed: [{ type: 'system', text: 'Room was reset', time: Date.now() }],
       };
       state.mySeat = null;
+      clearSession();
       renderGame();
     }
   });
