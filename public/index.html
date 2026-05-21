@@ -3,178 +3,209 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Ping Pong Link</title>
+    <title>Ping / Pong</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link
-      href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Inter:wght@400;500;600;700;800&display=swap"
-      rel="stylesheet"
-    />
+    <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Inter:wght@300..800&display=swap" rel="stylesheet" />
     <link rel="stylesheet" href="style.css" />
-    <script src="https://cdn.ably.com/lib/ably.min-1.js"></script>
+    <script defer src="/_vercel/insights/script.js"></script>
   </head>
   <body>
-    <div class="shell">
+
+    <!-- ═══════════════════════════════════════════════════════════════
+         SCREEN 1 — ONBOARDING
+    ═══════════════════════════════════════════════════════════════ -->
+    <div id="screen-onboard" class="screen active">
       <header class="topbar">
-        <a class="brand" href="#app" aria-label="Ping Pong Link home">
-          <div class="logo" aria-hidden="true">
-            <svg width="28" height="28" viewBox="0 0 28 28" fill="none">
-              <rect x="3" y="5" width="6" height="18" rx="3" fill="currentColor" />
-              <rect x="19" y="5" width="6" height="18" rx="3" fill="currentColor" />
-              <circle cx="14" cy="14" r="3.5" fill="currentColor" />
-            </svg>
-          </div>
-          <div><strong class="brand-name">Ping / Pong</strong><span class="brand-sub">Realtime rally</span></div>
-        </a>
-        <button class="theme-toggle" id="themeToggle" aria-label="Switch theme">☾</button>
+        <div class="brand">
+          <svg class="logo-svg" width="32" height="32" viewBox="0 0 32 32" fill="none" aria-hidden="true">
+            <rect x="3" y="6" width="7" height="20" rx="3.5" fill="currentColor"/>
+            <rect x="22" y="6" width="7" height="20" rx="3.5" fill="currentColor"/>
+            <circle cx="16" cy="16" r="4" fill="currentColor"/>
+          </svg>
+          <span class="brand-name">Ping / Pong</span>
+        </div>
+        <button class="icon-btn" id="themeToggle" aria-label="Toggle theme">☾</button>
       </header>
 
-      <!-- reconnect banner -->
-      <div id="reconnectBanner" class="banner reconnect-banner hidden" role="status" aria-live="polite">
-        <span id="reconnectMsg">Reconnecting…</span>
-        <button
-          class="btn btn-secondary"
-          id="reconnectBtn"
-          style="min-height: 36px; padding: 0.5rem 0.85rem; font-size: var(--text-xs)"
-        >
-          Reconnect now
-        </button>
-      </div>
+      <main class="ob-main">
+        <!-- Step 1: Name + emoji -->
+        <section id="step-name" class="ob-card">
+          <h1 class="ob-title">Who are you?</h1>
+          <p class="ob-sub">Enter your name and pick an emoji. That's it.</p>
 
-      <main id="app">
-        <section class="hero">
-          <div class="panel hero-copy">
-            <span class="eyebrow">Realtime · WebSocket sync · Notifications</span>
-            <h1>Two players. One link. Live rally.</h1>
-            <p class="lead">
-              Create a room, share the link, claim a side. Alternate ping and pong in real time — each hit can carry a
-              note, a URL, or a song.
-            </p>
-            <div class="mini-points">
-              <div class="mini-card">
-                <strong>Realtime room</strong><span class="muted">Moves sync live over Ably WebSockets.</span>
-              </div>
-              <div class="mini-card">
-                <strong>Player identity</strong><span class="muted">Name and emoji before you join.</span>
-              </div>
-              <div class="mini-card">
-                <strong>Notifications</strong><span class="muted">Browser alerts when the other player hits.</span>
-              </div>
-            </div>
+          <div class="ob-field">
+            <label for="ob-name" class="sr-only">Your name</label>
+            <input
+              id="ob-name"
+              class="ob-input"
+              type="text"
+              placeholder="Your name"
+              maxlength="32"
+              autocomplete="nickname"
+              autofocus
+            />
+            <div class="field-error" id="ob-name-error"></div>
           </div>
 
-          <div class="stack">
-            <section class="panel card">
-              <h2>Room</h2>
-              <p class="muted">Both players open the same link. Moves sync instantly.</p>
-              <div class="room-link">
-                <input
-                  id="roomCode"
-                  placeholder="Room code"
-                  maxlength="24"
-                  aria-label="Room code"
-                  aria-required="true"
-                />
-                <button class="btn btn-secondary" id="makeRoomBtn">Make room</button>
-                <button class="btn btn-ghost" id="copyRoomBtn">Copy link</button>
-              </div>
-              <div class="field-error" id="roomCodeError"></div>
-              <div class="actions" style="margin-top: 1rem">
-                <button class="btn btn-secondary" id="notifyBtn">🔔 Enable notifications</button>
-              </div>
-              <p class="footer-note">Deploy on Vercel → add <code>ABLY_API_KEY</code> env var → share the link.</p>
-            </section>
+          <div class="ob-emoji-row" id="ob-emoji-row" role="radiogroup" aria-label="Choose an emoji"></div>
 
-            <section class="panel card">
-              <h2>Your player</h2>
-              <div class="grid-2">
-                <label
-                  >Name<input
-                    id="playerName"
-                    placeholder="Khalid"
-                    maxlength="32"
-                    aria-label="Your display name"
-                    aria-required="true"
-                /></label>
-                <label
-                  >Emoji<input
-                    id="playerEmoji"
-                    placeholder="🏓"
-                    maxlength="2"
-                    aria-label="Your emoji icon"
-                    aria-required="true"
-                /></label>
-              </div>
-              <div class="field-error" id="playerError"></div>
-              <div style="margin-top: 1rem">
-                <div class="helper" style="margin-bottom: 0.5rem">Quick pick</div>
-                <div class="emoji-grid" id="emojiGrid" role="radiogroup" aria-label="Choose an emoji"></div>
-              </div>
-              <div class="actions" style="margin-top: 1rem">
-                <button class="btn btn-primary" id="savePlayerBtn">Save player</button>
-                <button class="btn btn-secondary" id="claimSeatBtn">Claim seat</button>
-              </div>
-            </section>
+          <button class="btn btn-primary btn-xl" id="ob-next-btn">Continue →</button>
+        </section>
+
+        <!-- Step 2: Host vs Guest -->
+        <section id="step-room" class="ob-card hidden">
+          <p class="ob-greeting" id="ob-greeting"></p>
+
+          <!-- Host path -->
+          <div id="host-create-wrap">
+            <h2 class="ob-title" style="margin-top:var(--space-4)">Start a game</h2>
+            <p class="ob-sub">We'll generate a room. Share the QR with your opponent.</p>
+            <button class="btn btn-primary btn-xl" id="host-create-btn" style="margin-top:var(--space-6)">Create room →</button>
+          </div>
+
+          <!-- Guest path (arrived via link) -->
+          <div id="guest-join-wrap" class="hidden">
+            <h2 class="ob-title" style="margin-top:var(--space-4)">Join game</h2>
+            <p class="ob-sub">Room: <strong id="guest-room-code"></strong></p>
+            <button class="btn btn-primary btn-xl" id="guest-join-btn" style="margin-top:var(--space-6)">Join →</button>
           </div>
         </section>
 
-        <!-- error banner -->
-        <div id="errorBanner" class="banner error-banner hidden" role="alert" aria-live="assertive">
-          <span id="errorMsg"></span>
-          <button class="banner-dismiss" id="errorDismiss" aria-label="Dismiss error">&times;</button>
-        </div>
+        <!-- Step 3: QR / share (host only) -->
+        <section id="step-qr" class="ob-card hidden">
+          <h2 class="ob-title">Share with your opponent</h2>
+          <p class="ob-sub">They scan the QR or open the link. You'll both be in the room.</p>
 
-        <section class="stage">
-          <section class="panel table-card" aria-label="Game table">
-            <div class="table-top">
-              <div>
-                <div class="statusline">
-                  <span class="badge turn" id="turnBadge" aria-live="polite">Waiting for room</span>
-                  <span class="badge wait" id="syncBadge" aria-live="polite">Disconnected</span>
-                </div>
-                <p class="muted" id="turnText" style="margin-top: 0.7rem">Create a room to connect.</p>
-              </div>
-              <div class="players" id="playersView"></div>
-            </div>
-            <div class="arena" aria-hidden="true">
-              <div class="paddle left"></div>
-              <div class="paddle right"></div>
-              <div class="ball" id="ball"></div>
-              <div class="impact" id="impactText">No rally yet</div>
-            </div>
-            <div class="composer">
-              <label
-                >Attach a note, link, or song (optional)
-                <textarea
-                  id="messageInput"
-                  placeholder="Ping — song: Nujabes / link: https://... / or just write something"
-                  maxlength="1000"
-                  aria-label="Message attachment for your move"
-                ></textarea>
-              </label>
-              <div class="char-count" id="charCount" aria-live="polite">0 / 1000</div>
-              <div class="field-error" id="composerError"></div>
-              <div class="actions">
-                <button class="btn btn-primary" id="sendBtn" aria-label="Send your move">Send move</button>
-                <button class="btn btn-ghost" id="resetRoomBtn">Reset room</button>
-              </div>
-              <div class="helper">
-                First move is always <strong>ping</strong>. Turns alternate strictly. Server validates the order.
-              </div>
-            </div>
-          </section>
+          <div id="qr-wrap" class="qr-box" aria-label="QR code for room link"></div>
 
-          <aside class="panel" style="display: flex; flex-direction: column" aria-label="Rally feed">
-            <div class="card" style="padding-bottom: 0">
-              <h2>Rally feed</h2>
-              <p class="muted">Live timeline.</p>
-            </div>
-            <div class="feed" id="feed" role="log" aria-live="polite" aria-label="Rally events"></div>
-          </aside>
+          <div class="ob-link-row">
+            <input id="qr-link-input" class="ob-input" type="text" readonly aria-label="Room link" />
+            <button class="btn btn-secondary" id="qr-copy-btn">Copy</button>
+          </div>
+
+          <div class="qr-actions">
+            <button class="btn btn-ghost" id="qr-show-qr-btn">Refresh QR</button>
+            <button class="btn btn-primary" id="qr-continue-btn">I'm ready →</button>
+          </div>
+
+          <p class="ob-hint">Waiting for opponent… share this link and they can join instantly.</p>
         </section>
       </main>
     </div>
 
+    <!-- ═══════════════════════════════════════════════════════════════
+         SCREEN 2 — GAME
+    ═══════════════════════════════════════════════════════════════ -->
+    <div id="screen-game" class="screen hidden">
+
+      <!-- Sticky game header -->
+      <header class="game-header">
+        <div class="game-brand">
+          <svg width="24" height="24" viewBox="0 0 32 32" fill="none" aria-hidden="true">
+            <rect x="3" y="6" width="7" height="20" rx="3.5" fill="currentColor"/>
+            <rect x="22" y="6" width="7" height="20" rx="3.5" fill="currentColor"/>
+            <circle cx="16" cy="16" r="4" fill="currentColor"/>
+          </svg>
+          <span class="brand-name">Ping / Pong</span>
+        </div>
+
+        <div class="game-status">
+          <span class="badge" id="syncBadge">○ Connecting</span>
+          <span class="turn-text" id="turnText">Waiting…</span>
+        </div>
+
+        <div class="game-actions">
+          <button class="btn btn-ghost btn-sm" id="shareBtn">📲 Share QR</button>
+          <button class="icon-btn" id="themeToggleGame" aria-label="Toggle theme">☾</button>
+        </div>
+      </header>
+
+      <!-- Reconnect banner -->
+      <div id="reconnectBanner" class="banner reconnect-banner hidden" role="status" aria-live="polite">
+        <span id="reconnectMsg"></span>
+        <button class="btn btn-sm" id="reconnectBtn" style="display:none">Retry</button>
+      </div>
+
+      <!-- Error banner -->
+      <div id="errorBanner" class="banner error-banner hidden" role="alert">
+        <span id="errorMsg"></span>
+        <button class="icon-btn" id="errorDismiss" aria-label="Dismiss">×</button>
+      </div>
+
+      <div class="game-layout">
+        <!-- LEFT: arena + composer -->
+        <div class="game-left">
+
+          <!-- Players strip -->
+          <div class="players-strip" id="playersView"></div>
+
+          <!-- Arena -->
+          <div class="arena" aria-hidden="true">
+            <div class="court-markings">
+              <div class="court-line top"></div>
+              <div class="court-line bottom"></div>
+              <div class="court-net"></div>
+            </div>
+            <div class="paddle" id="paddleLeft"></div>
+            <div class="paddle right" id="paddleRight"></div>
+            <div class="ball" id="ball"></div>
+            <div class="impact-label" id="impactLabel"></div>
+          </div>
+
+          <!-- Composer -->
+          <div class="composer-card">
+            <p class="composer-hint" id="composerHint">Create a room to start.</p>
+            <label for="messageInput" class="sr-only">Attach a note, link, or song</label>
+            <textarea
+              id="messageInput"
+              class="composer-input"
+              placeholder="Attach a note, link, or song… (optional)"
+              maxlength="1000"
+              rows="3"
+            ></textarea>
+            <div class="composer-footer">
+              <span class="char-count" id="charCount" aria-live="polite">0 / 1000</span>
+              <div class="composer-btns">
+                <button class="btn btn-ghost btn-sm" id="resetRoomBtn">Reset</button>
+                <button class="btn btn-primary" id="sendBtn" disabled>Send move</button>
+              </div>
+            </div>
+            <div class="field-error" id="composerError"></div>
+            <p class="composer-tip">⌘↵ to send · First move is always <strong>ping</strong></p>
+          </div>
+        </div>
+
+        <!-- RIGHT: feed -->
+        <aside class="game-right">
+          <div class="feed-header">
+            <h2 class="feed-title">Rally feed</h2>
+            <span class="feed-room" id="feedRoomCode"></span>
+          </div>
+          <div class="feed" id="feed" role="log" aria-live="polite" aria-label="Rally events"></div>
+        </aside>
+      </div>
+    </div>
+
+    <!-- ═══════════════════════════════════════════════════════════════
+         QR MODAL (accessible from game screen)
+    ═══════════════════════════════════════════════════════════════ -->
+    <div id="qr-modal" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-label="Share QR code">
+      <div class="modal-card">
+        <div class="modal-head">
+          <h3>Share with opponent</h3>
+          <button class="icon-btn" id="qrModalClose" aria-label="Close">×</button>
+        </div>
+        <div id="qr-modal-wrap" class="qr-box"></div>
+        <div class="ob-link-row" style="margin-top:var(--space-4)">
+          <input id="qr-modal-link" class="ob-input" type="text" readonly aria-label="Room link" />
+          <button class="btn btn-secondary" id="qr-modal-copy">Copy</button>
+        </div>
+      </div>
+    </div>
+
+    <script src="https://cdn.ably.com/lib/ably.min-1.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
     <script src="app.js"></script>
     <script defer src="https://cdn.vercel-insights.com/v1/script.js"></script>
   </body>
