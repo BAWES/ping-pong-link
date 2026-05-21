@@ -1,9 +1,10 @@
 <!doctype html>
-<html lang="en" data-theme="light">
+<html lang="en" data-theme="dark">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Ping / Pong</title>
+    <title>Ping / Pong</title>
+    <meta name="description" content="Turn-based realtime rally. Share one link, alternate ping and pong, attach anything." />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Inter:wght@300..800&display=swap" rel="stylesheet" />
@@ -12,10 +13,21 @@
   </head>
   <body>
 
-    <!-- ═══════════════════════════════════════════════════════════════
-         SCREEN 1 — ONBOARDING
-    ═══════════════════════════════════════════════════════════════ -->
+    <!-- ═══ SCREEN 1 — ONBOARDING ═══ -->
     <div id="screen-onboard" class="screen active">
+
+      <!-- Animated court behind everything -->
+      <div class="court-scene" aria-hidden="true">
+        <div class="cs-border"></div>
+        <div class="cs-net"></div>
+        <div class="cs-circle"></div>
+        <div class="cs-paddle cs-paddle--l"></div>
+        <div class="cs-paddle cs-paddle--r"></div>
+        <div class="cs-ball"></div>
+        <div class="cs-glow cs-glow--teal"></div>
+        <div class="cs-glow cs-glow--gold"></div>
+      </div>
+
       <header class="topbar">
         <div class="brand">
           <svg class="logo-svg" width="32" height="32" viewBox="0 0 32 32" fill="none" aria-hidden="true">
@@ -23,24 +35,27 @@
             <rect x="22" y="6" width="7" height="20" rx="3.5" fill="currentColor"/>
             <circle cx="16" cy="16" r="4" fill="currentColor"/>
           </svg>
-          <span class="brand-name">Ping / Pong</span>
+          <span class="brand-name">Ping / Pong</span>
         </div>
-        <button class="icon-btn" id="themeToggle" aria-label="Toggle theme">☾</button>
+        <button class="icon-btn" id="themeToggle" aria-label="Toggle theme">☀︎</button>
       </header>
 
       <main class="ob-main">
+
         <!-- Step 1: Name + emoji -->
         <section id="step-name" class="ob-card">
-          <h1 class="ob-title">Who are you?</h1>
-          <p class="ob-sub">Enter your name and pick an emoji. That's it.</p>
+          <div class="ob-hero">
+            <h1 class="ob-headline"><em>A rally</em><br>between<br>two people.</h1>
+            <p class="ob-tagline">One link. Take turns. Attach anything.</p>
+          </div>
 
           <div class="ob-field">
-            <label for="ob-name" class="sr-only">Your name</label>
+            <label for="ob-name" class="ob-label">Your name</label>
             <input
               id="ob-name"
               class="ob-input"
               type="text"
-              placeholder="Your name"
+              placeholder="Enter your name…"
               maxlength="32"
               autocomplete="nickname"
               autofocus
@@ -48,58 +63,61 @@
             <div class="field-error" id="ob-name-error"></div>
           </div>
 
-          <div class="ob-emoji-row" id="ob-emoji-row" role="radiogroup" aria-label="Choose an emoji"></div>
+          <div class="ob-field">
+            <label class="ob-label">Pick your emoji</label>
+            <div class="ob-emoji-row" id="ob-emoji-row" role="radiogroup" aria-label="Choose an emoji"></div>
+          </div>
 
           <button class="btn btn-primary btn-xl" id="ob-next-btn">Continue →</button>
+          <p class="ob-footnote">No account · No download · Just a link</p>
         </section>
 
         <!-- Step 2: Host vs Guest -->
         <section id="step-room" class="ob-card hidden">
           <p class="ob-greeting" id="ob-greeting"></p>
 
-          <!-- Host path -->
           <div id="host-create-wrap">
-            <h2 class="ob-title" style="margin-top:var(--space-4)">Start a game</h2>
-            <p class="ob-sub">We'll generate a room. Share the QR with your opponent.</p>
-            <button class="btn btn-primary btn-xl" id="host-create-btn" style="margin-top:var(--space-6)">Create room →</button>
+            <h2 class="ob-step-title">Start a game</h2>
+            <p class="ob-sub">We’ll generate a room. Share the QR with your opponent.</p>
+            <button class="btn btn-primary btn-xl" id="host-create-btn">Create room →</button>
           </div>
 
-          <!-- Guest path (arrived via link) -->
           <div id="guest-join-wrap" class="hidden">
-            <h2 class="ob-title" style="margin-top:var(--space-4)">Join game</h2>
+            <h2 class="ob-step-title">Join game</h2>
             <p class="ob-sub">Room: <strong id="guest-room-code"></strong></p>
-            <button class="btn btn-primary btn-xl" id="guest-join-btn" style="margin-top:var(--space-6)">Join →</button>
+            <button class="btn btn-primary btn-xl" id="guest-join-btn">Join →</button>
           </div>
         </section>
 
         <!-- Step 3: QR / share (host only) -->
         <section id="step-qr" class="ob-card hidden">
-          <h2 class="ob-title">Share with your opponent</h2>
-          <p class="ob-sub">They scan the QR or open the link. You'll both be in the room.</p>
+          <h2 class="ob-step-title">Invite your <em>opponent.</em></h2>
+          <p class="ob-sub">They scan the QR or open the link — then the rally begins.</p>
 
           <div id="qr-wrap" class="qr-box" aria-label="QR code for room link"></div>
 
           <div class="ob-link-row">
             <input id="qr-link-input" class="ob-input" type="text" readonly aria-label="Room link" />
-            <button class="btn btn-secondary" id="qr-copy-btn">Copy</button>
+            <button class="btn btn-primary" id="qr-copy-btn">Copy link</button>
           </div>
 
           <div class="qr-actions">
             <button class="btn btn-ghost" id="qr-show-qr-btn">Refresh QR</button>
-            <button class="btn btn-primary" id="qr-continue-btn">I'm ready →</button>
+            <button class="btn btn-primary" id="qr-continue-btn">I’m ready →</button>
           </div>
 
-          <p class="ob-hint">Waiting for opponent… share this link and they can join instantly.</p>
+          <div class="sh-waiting">
+            <span class="sh-dot"></span><span class="sh-dot"></span><span class="sh-dot"></span>
+            <span>Waiting for opponent…</span>
+          </div>
         </section>
+
       </main>
     </div>
 
-    <!-- ═══════════════════════════════════════════════════════════════
-         SCREEN 2 — GAME
-    ═══════════════════════════════════════════════════════════════ -->
+    <!-- ═══ SCREEN 2 — GAME ═══ -->
     <div id="screen-game" class="screen hidden">
 
-      <!-- Sticky game header -->
       <header class="game-header">
         <div class="game-brand">
           <svg width="24" height="24" viewBox="0 0 32 32" fill="none" aria-hidden="true">
@@ -107,7 +125,7 @@
             <rect x="22" y="6" width="7" height="20" rx="3.5" fill="currentColor"/>
             <circle cx="16" cy="16" r="4" fill="currentColor"/>
           </svg>
-          <span class="brand-name">Ping / Pong</span>
+          <span class="brand-name">Ping / Pong</span>
         </div>
 
         <div class="game-status">
@@ -117,30 +135,25 @@
 
         <div class="game-actions">
           <button class="btn btn-ghost btn-sm" id="shareBtn">📲 Share QR</button>
-          <button class="icon-btn" id="themeToggleGame" aria-label="Toggle theme">☾</button>
+          <button class="icon-btn" id="themeToggleGame" aria-label="Toggle theme">☀︎</button>
         </div>
       </header>
 
-      <!-- Reconnect banner -->
       <div id="reconnectBanner" class="banner reconnect-banner hidden" role="status" aria-live="polite">
         <span id="reconnectMsg"></span>
         <button class="btn btn-sm" id="reconnectBtn" style="display:none">Retry</button>
       </div>
 
-      <!-- Error banner -->
       <div id="errorBanner" class="banner error-banner hidden" role="alert">
         <span id="errorMsg"></span>
         <button class="icon-btn" id="errorDismiss" aria-label="Dismiss">×</button>
       </div>
 
       <div class="game-layout">
-        <!-- LEFT: arena + composer -->
         <div class="game-left">
 
-          <!-- Players strip -->
           <div class="players-strip" id="playersView"></div>
 
-          <!-- Arena -->
           <div class="arena" aria-hidden="true">
             <div class="court-markings">
               <div class="court-line top"></div>
@@ -153,7 +166,6 @@
             <div class="impact-label" id="impactLabel"></div>
           </div>
 
-          <!-- Composer -->
           <div class="composer-card">
             <p class="composer-hint" id="composerHint">Create a room to start.</p>
             <label for="messageInput" class="sr-only">Attach a note, link, or song</label>
@@ -165,7 +177,7 @@
               rows="3"
             ></textarea>
             <div class="composer-footer">
-              <span class="char-count" id="charCount" aria-live="polite">0 / 1000</span>
+              <span class="char-count" id="charCount" aria-live="polite">0 / 1000</span>
               <div class="composer-btns">
                 <button class="btn btn-ghost btn-sm" id="resetRoomBtn">Reset</button>
                 <button class="btn btn-primary" id="sendBtn" disabled>Send move</button>
@@ -176,7 +188,6 @@
           </div>
         </div>
 
-        <!-- RIGHT: feed -->
         <aside class="game-right">
           <div class="feed-header">
             <h2 class="feed-title">Rally feed</h2>
@@ -187,9 +198,7 @@
       </div>
     </div>
 
-    <!-- ═══════════════════════════════════════════════════════════════
-         QR MODAL (accessible from game screen)
-    ═══════════════════════════════════════════════════════════════ -->
+    <!-- QR MODAL -->
     <div id="qr-modal" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-label="Share QR code">
       <div class="modal-card">
         <div class="modal-head">
@@ -197,9 +206,9 @@
           <button class="icon-btn" id="qrModalClose" aria-label="Close">×</button>
         </div>
         <div id="qr-modal-wrap" class="qr-box"></div>
-        <div class="ob-link-row" style="margin-top:var(--space-4)">
+        <div class="ob-link-row" style="margin-top:var(--space-6)">
           <input id="qr-modal-link" class="ob-input" type="text" readonly aria-label="Room link" />
-          <button class="btn btn-secondary" id="qr-modal-copy">Copy</button>
+          <button class="btn btn-primary" id="qr-modal-copy">Copy</button>
         </div>
       </div>
     </div>
@@ -207,6 +216,5 @@
     <script src="https://cdn.ably.com/lib/ably.min-1.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
     <script src="app.js"></script>
-    <script defer src="https://cdn.vercel-insights.com/v1/script.js"></script>
   </body>
 </html>
