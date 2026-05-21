@@ -11,8 +11,7 @@
     "prepare": "husky"
   },
   "dependencies": {
-    "ably": "^2.6.0",
-    "@vercel/analytics": "^1.4.1"
+    "ably": "^2.6.0"
   },
   "devDependencies": {
     "@commitlint/cli": "^21.0.1",
